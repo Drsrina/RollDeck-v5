@@ -9,7 +9,9 @@ import {
   measureGridDistance,
   parseMonsterSizeCells,
   pixelToAxialHex,
+  rollVttDamageExpression,
   snapPointToGrid,
+  stepTokenByDirection,
 } from './vttGrid';
 import type { NoteNode } from '../types';
 import type { VttGridConfig } from '../types/vtt';
@@ -156,5 +158,25 @@ describe('vttGrid math & importers', () => {
     // Ensure no two spawned tokens occupy the exact same center point
     const coords = new Set(tokens.map((t) => `${Math.round(t.x)},${Math.round(t.y)}`));
     expect(coords.size).toBe(tokens.length);
+  });
+
+  it('evaluates multi-term damage expressions and doubles only dice on critical hits', () => {
+    const fixedMaxRng = (sides: number) => sides;
+    const normal = rollVttDamageExpression('2d6 + 1d4 + 3 cortante', false, fixedMaxRng);
+    expect(normal.total).toBe(12 + 4 + 3);
+    expect(normal.breakdown).toBe('2d6(12) + 1d4(4) + 3');
+
+    const crit = rollVttDamageExpression('2d6 + 1d4 + 3 cortante', true, fixedMaxRng);
+    expect(crit.total).toBe(24 + 8 + 3);
+    expect(crit.breakdown).toBe('4d6(24) + 2d4(8) + 3');
+  });
+
+  it('steps tokens cleanly by 1 cell in both Square and Hex grids', () => {
+    const sqStep = stepTokenByDirection(32, 32, 1, 0, SQUARE_GRID, 1);
+    expect(sqStep).toEqual({ x: 96, y: 32 });
+
+    const hexOrigin = axialHexToPixel(0, 0, HEX_GRID.cellSize);
+    const hexRight = stepTokenByDirection(hexOrigin.x, hexOrigin.y, 1, 0, HEX_GRID, 1);
+    expect(pixelToAxialHex(hexRight.x, hexRight.y, HEX_GRID.cellSize)).toEqual({ q: 1, r: 0 });
   });
 });

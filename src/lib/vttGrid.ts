@@ -413,6 +413,101 @@ export function createTokensFromEncounter(
   return created;
 }
 
+export interface DamageRollResult {
+  total: number;
+  breakdown: string;
+}
+
+/**
+ * Evaluates tabletop damage formulas including multi-term dice expressions
+ * (e.g. "1d8+3", "2d6 + 1d4 + 4", "1d10+5 cortante"). On critical hits,
+ * only dice counts are doubled while flat modifiers stay constant.
+ */
+export function rollVttDamageExpression(
+  expr: string,
+  isCrit = false,
+  rng: (sides: number) => number = (sides) => Math.floor(Math.random() * sides) + 1
+): DamageRollResult {
+  const sanitized = expr.replace(/,/g, '.').trim();
+  const termRegex = /([+-]?)\s*(?:(\d+)d(\d+)|(\d+))/gi;
+  const parts: string[] = [];
+  let total = 0;
+  let matchedAny = false;
+
+  let match: RegExpExecArray | null;
+  while ((match = termRegex.exec(sanitized)) !== null) {
+    // Stop parsing if text clearly after a space isn't part of the math formula
+    if (matchedAny && match.index > 0) {
+      const between = sanitized.slice(0, match.index);
+      if (/[a-zA-Z]{2,}/.test(between.replace(/d\d+/gi, ''))) {
+        break;
+      }
+    }
+    matchedAny = true;
+    const sign = match[1] === '-' ? -1 : 1;
+    const signPrefix = parts.length === 0 ? (sign < 0 ? '-' : '') : sign < 0 ? ' - ' : ' + ';
+
+    if (match[2] && match[3]) {
+      const baseCount = Math.max(1, Math.min(20, parseInt(match[2], 10)));
+      const count = isCrit ? baseCount * 2 : baseCount;
+      const sides = Math.max(2, Math.min(100, parseInt(match[3], 10)));
+      let sub = 0;
+      for (let i = 0; i < count; i++) {
+        sub += rng(sides);
+      }
+      total += sign * sub;
+      parts.push(`${signPrefix}${count}d${sides}(${sub})`);
+    } else if (match[4]) {
+      const flat = parseInt(match[4], 10);
+      total += sign * flat;
+      parts.push(`${signPrefix}${flat}`);
+    }
+  }
+
+  if (!matchedAny) {
+    return { total: 1, breakdown: '1' };
+  }
+
+  return {
+    total: Math.max(1, total),
+    breakdown: parts.join(''),
+  };
+}
+
+/**
+ * Steps a token cleanly by 1 grid cell along (dx, dy) in {-1, 0, 1} for Square, Hex, or Gridless arenas.
+ */
+export function stepTokenByDirection(
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+  grid: VttGridConfig,
+  sizeCells: VttTokenSize = 1
+): Point2D {
+  const cs = Math.max(24, grid.cellSize);
+
+  if (grid.type === 'hex') {
+    const axial = pixelToAxialHex(x, y, cs);
+    let nq = axial.q;
+    let nr = axial.r;
+    if (dx !== 0 && dy === 0) {
+      nq += dx;
+    } else if (dy !== 0) {
+      nr += dy;
+      if (dx === 0 && dy < 0) nq += 0;
+      if (dx !== 0) nq += dx > 0 && dy > 0 ? 0 : dx < 0 && dy < 0 ? 0 : dx;
+    }
+    return axialHexToPixel(nq, nr, cs);
+  }
+
+  const nextX = x + dx * cs;
+  const nextY = y + dy * cs;
+  return grid.snapToGrid && grid.type === 'square'
+    ? snapPointToGrid(nextX, nextY, grid, sizeCells)
+    : { x: nextX, y: nextY };
+}
+
 /**
  * Creates a clean default tactical VTT scene ready for immediate play.
  */

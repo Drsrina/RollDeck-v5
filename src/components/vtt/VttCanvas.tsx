@@ -1,4 +1,4 @@
-import { Compass, Lock, Plus, Shield, Swords, Users } from 'lucide-react';
+import { Compass, EyeOff, Lock, Plus, Shield, Swords, Users } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getHexPolygonPoints,
@@ -81,6 +81,34 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
   const [ruler, setRuler] = useState<RulerState | null>(null);
   const [panState, setPanState] = useState<PanState | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
+  const [bgLoadError, setBgLoadError] = useState(false);
+
+  const cameraRef = useRef(scene.camera);
+  cameraRef.current = scene.camera;
+
+  const activePointersRef = useRef<Map<number, Point2D>>(new Map());
+  const pinchStartRef = useRef<{
+    dist: number;
+    zoom: number;
+    camX: number;
+    camY: number;
+    midClientX: number;
+    midClientY: number;
+  } | null>(null);
+
+  // Reset transient interaction state if the user switches scenes mid-drag
+  useEffect(() => {
+    setDragToken(null);
+    setRuler(null);
+    setPanState(null);
+    activePointersRef.current.clear();
+    pinchStartRef.current = null;
+  }, [scene.id]);
+
+  // Reset image error state whenever background changes
+  useEffect(() => {
+    setBgLoadError(false);
+  }, [scene.background?.dataUrl]);
 
   // Measure container dynamically
   useEffect(() => {
@@ -98,7 +126,7 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // Spacebar temporary pan mode
+  // Spacebar temporary pan mode (with window blur safeguard)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -111,18 +139,48 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
       ) {
         return;
       }
-      if (e.code === 'Space') setSpacePressed(true);
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setSpacePressed(true);
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') setSpacePressed(false);
     };
+    const onBlur = () => setSpacePressed(false);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, []);
+
+  // Native non-passive wheel listener for smooth cursor-centered zoom without console warnings
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cam = cameraRef.current;
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      const nextZoom = Math.min(2.5, Math.max(0.35, cam.zoom * factor));
+      const sx = e.clientX - rect.left - rect.width / 2;
+      const sy = e.clientY - rect.top - rect.height / 2;
+
+      const worldBeforeX = sx / cam.zoom - cam.x;
+      const worldBeforeY = sy / cam.zoom - cam.y;
+      const nextCamX = sx / nextZoom - worldBeforeX;
+      const nextCamY = sy / nextZoom - worldBeforeY;
+
+      setCamera({ x: nextCamX, y: nextCamY, zoom: nextZoom });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [setCamera]);
 
   // Smooth camera center request (e.g., when clicking combatant or importing tokens)
   useEffect(() => {
@@ -130,10 +188,9 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
     setCamera({
       x: -cameraFocusRequest.x,
       y: -cameraFocusRequest.y,
-      zoom: scene.camera.zoom,
+      zoom: cameraRef.current.zoom,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraFocusRequest]);
+  }, [cameraFocusRequest, setCamera]);
 
   const { camera, grid } = scene;
   const surface = VTT_SURFACE_PRESETS[scene.surfacePreset] || VTT_SURFACE_PRESETS.slate;
@@ -175,26 +232,28 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
     );
   }, [grid.type, grid.cellSize, visibleBounds]);
 
-  // Cursor-centered mouse wheel zoom
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const factor = e.deltaY < 0 ? 1.12 : 0.89;
-    const nextZoom = Math.min(2.5, Math.max(0.35, camera.zoom * factor));
-    const sx = e.clientX - rect.left - rect.width / 2;
-    const sy = e.clientY - rect.top - rect.height / 2;
-
-    const worldBeforeX = sx / camera.zoom - camera.x;
-    const worldBeforeY = sy / camera.zoom - camera.y;
-    const nextCamX = sx / nextZoom - worldBeforeX;
-    const nextCamY = sy / nextZoom - worldBeforeY;
-
-    setCamera({ x: nextCamX, y: nextCamY, zoom: nextZoom });
-  };
-
-  // Start pan or ruler on arena background
+  // Start pan, pinch, or ruler on arena background
   const handleArenaPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Two-finger pinch-to-zoom on touch devices
+    if (activePointersRef.current.size === 2) {
+      const [p1, p2] = Array.from(activePointersRef.current.values());
+      const dist = Math.max(10, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+      pinchStartRef.current = {
+        dist,
+        zoom: camera.zoom,
+        camX: camera.x,
+        camY: camera.y,
+        midClientX: (p1.x + p2.x) / 2,
+        midClientY: (p1.y + p2.y) / 2,
+      };
+      setPanState(null);
+      setDragToken(null);
+      setRuler(null);
+      return;
+    }
+
     if (e.button === 1 || activeTool === 'pan' || spacePressed) {
       e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -260,9 +319,14 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
 
     if (e.button !== 0) return;
     e.stopPropagation();
-    selectToken(token.id);
 
-    if (token.locked) return;
+    if (token.locked) {
+      // Immediately open Inspector for locked tokens so users can inspect or unlock in one click
+      selectToken(token.id, true);
+      return;
+    }
+
+    selectToken(token.id);
 
     const world = clientToWorld(e.clientX, e.clientY);
     containerRef.current?.setPointerCapture(e.pointerId);
@@ -282,6 +346,36 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
   };
 
   const handleArenaPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (pinchStartRef.current && activePointersRef.current.size === 2) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const [p1, p2] = Array.from(activePointersRef.current.values());
+      const curDist = Math.max(10, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+      const scaleRatio = curDist / pinchStartRef.current.dist;
+      const nextZoom = Math.min(2.5, Math.max(0.35, pinchStartRef.current.zoom * scaleRatio));
+
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+      const startSx = pinchStartRef.current.midClientX - rect.left - rect.width / 2;
+      const startSy = pinchStartRef.current.midClientY - rect.top - rect.height / 2;
+      const curSx = midX - rect.left - rect.width / 2;
+      const curSy = midY - rect.top - rect.height / 2;
+
+      const worldAnchorX = startSx / pinchStartRef.current.zoom - pinchStartRef.current.camX;
+      const worldAnchorY = startSy / pinchStartRef.current.zoom - pinchStartRef.current.camY;
+
+      setCamera({
+        x: curSx / nextZoom - worldAnchorX,
+        y: curSy / nextZoom - worldAnchorY,
+        zoom: nextZoom,
+      });
+      return;
+    }
+
     if (panState && e.pointerId === panState.pointerId) {
       const dx = (e.clientX - panState.startClientX) / camera.zoom;
       const dy = (e.clientY - panState.startClientY) / camera.zoom;
@@ -324,6 +418,19 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
   };
 
   const handleArenaPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) {
+      pinchStartRef.current = null;
+    }
+
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore if pointer capture already ended
+    }
+
     if (panState && e.pointerId === panState.pointerId) {
       setPanState(null);
       return;
@@ -388,7 +495,6 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      onWheel={handleWheel}
       onPointerDown={handleArenaPointerDown}
       onPointerMove={handleArenaPointerMove}
       onPointerUp={handleArenaPointerUp}
@@ -408,12 +514,13 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
         }}
       >
         {/* 1. Optional Uploaded Battlemap Background Image */}
-        {scene.background && (
+        {scene.background && !bgLoadError && (
           <img
             src={scene.background.dataUrl}
             alt={scene.background.name || 'Mapa de batalha'}
             referrerPolicy="no-referrer"
             draggable={false}
+            onError={() => setBgLoadError(true)}
             className="pointer-events-none select-none max-w-none absolute"
             style={{
               left: `${scene.background.x}px`,
@@ -629,20 +736,35 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
                 </div>
               )}
 
-              {/* Lock Indicator */}
-              {token.locked && (
-                <div
-                  className="absolute -top-1 -left-1 p-0.5 rounded bg-slate-950/90 border border-white/20 text-slate-300 pointer-events-none"
-                  title="Token travado"
-                >
-                  <Lock className="w-2.5 h-2.5" />
+              {/* Lock & Hidden Indicators (top-left) */}
+              {(token.locked || token.hidden) && (
+                <div className="absolute -top-1 -left-1 flex items-center gap-0.5 pointer-events-none">
+                  {token.locked && (
+                    <div
+                      className="p-0.5 rounded bg-slate-950/90 border border-white/20 text-amber-300"
+                      title="Token travado"
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                    </div>
+                  )}
+                  {token.hidden && (
+                    <div
+                      className="p-0.5 rounded bg-slate-950/90 border border-purple-400/40 text-purple-300"
+                      title="Token oculto"
+                    >
+                      <EyeOff className="w-2.5 h-2.5" />
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Bottom HP Bar + Nameplate */}
               <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-none">
                 {token.faction !== 'object' && (
-                  <div className="w-[74px] bg-slate-950/95 border border-white/15 rounded px-1 py-0.5 shadow-lg">
+                  <div
+                    className="bg-slate-950/95 border border-white/15 rounded px-1 py-0.5 shadow-lg"
+                    style={{ width: `${Math.min(124, Math.max(66, Math.round(footprint * 1.15)))}px` }}
+                  >
                     <div className="h-1.5 w-full rounded-sm bg-slate-800 overflow-hidden">
                       <div
                         className="h-full transition-all duration-150"
@@ -703,48 +825,54 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
         })}
 
         {/* 4. Distance Ruler & Live Drag Movement Trail */}
-        {activeRulerMeasure && activeRulerMeasure.distance.cells > 0 && (
+        {activeRulerMeasure && (ruler || activeRulerMeasure.distance.cells > 0) && (
           <>
             <svg
               className="pointer-events-none overflow-visible absolute left-0 top-0 z-40"
               width="1"
               height="1"
             >
-              <line
-                x1={activeRulerMeasure.ax}
-                y1={activeRulerMeasure.ay}
-                x2={activeRulerMeasure.bx}
-                y2={activeRulerMeasure.by}
-                stroke="#22d3ee"
-                strokeWidth={2.5 / camera.zoom}
-                strokeDasharray={`${8 / camera.zoom} ${5 / camera.zoom}`}
-                strokeLinecap="round"
-              />
+              {activeRulerMeasure.distance.cells > 0 && (
+                <line
+                  x1={activeRulerMeasure.ax}
+                  y1={activeRulerMeasure.ay}
+                  x2={activeRulerMeasure.bx}
+                  y2={activeRulerMeasure.by}
+                  stroke="#22d3ee"
+                  strokeWidth={2.5 / camera.zoom}
+                  strokeDasharray={`${8 / camera.zoom} ${5 / camera.zoom}`}
+                  strokeLinecap="round"
+                />
+              )}
               <circle
                 cx={activeRulerMeasure.ax}
                 cy={activeRulerMeasure.ay}
                 r={4.5 / camera.zoom}
                 fill="#22d3ee"
               />
-              <circle
-                cx={activeRulerMeasure.bx}
-                cy={activeRulerMeasure.by}
-                r={5.5 / camera.zoom}
-                fill="#0b0f1a"
-                stroke="#22d3ee"
-                strokeWidth={2.2 / camera.zoom}
-              />
+              {activeRulerMeasure.distance.cells > 0 && (
+                <circle
+                  cx={activeRulerMeasure.bx}
+                  cy={activeRulerMeasure.by}
+                  r={5.5 / camera.zoom}
+                  fill="#0b0f1a"
+                  stroke="#22d3ee"
+                  strokeWidth={2.2 / camera.zoom}
+                />
+              )}
             </svg>
-            <div
-              className="absolute z-40 pointer-events-none px-2.5 py-1 rounded-lg bg-slate-950/95 border border-cyan-400/70 text-cyan-200 font-mono text-xs font-bold tabular-nums whitespace-nowrap shadow-xl"
-              style={{
-                left: `${(activeRulerMeasure.ax + activeRulerMeasure.bx) / 2}px`,
-                top: `${(activeRulerMeasure.ay + activeRulerMeasure.by) / 2 - 18 / camera.zoom}px`,
-                transform: `translate(-50%, -50%) scale(${1 / camera.zoom})`,
-              }}
-            >
-              {activeRulerMeasure.distance.label}
-            </div>
+            {activeRulerMeasure.distance.cells > 0 && (
+              <div
+                className="absolute z-40 pointer-events-none px-2.5 py-1 rounded-lg bg-slate-950/95 border border-cyan-400/70 text-cyan-200 font-mono text-xs font-bold tabular-nums whitespace-nowrap shadow-xl"
+                style={{
+                  left: `${(activeRulerMeasure.ax + activeRulerMeasure.bx) / 2}px`,
+                  top: `${(activeRulerMeasure.ay + activeRulerMeasure.by) / 2 - 18 / camera.zoom}px`,
+                  transform: `translate(-50%, -50%) scale(${1 / camera.zoom})`,
+                }}
+              >
+                {activeRulerMeasure.distance.label}
+              </div>
+            )}
           </>
         )}
       </div>

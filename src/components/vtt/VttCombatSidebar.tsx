@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Lock,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   Shield,
@@ -24,6 +25,7 @@ import {
 import React, { useRef, useState } from 'react';
 import { playCriticalFailSound, playCriticalSuccessSound, playDiceRollSound } from '../../lib/audio';
 import { rollSingleDieRaw } from '../../lib/roll';
+import { rollVttDamageExpression } from '../../lib/vttGrid';
 import { useAppStore } from '../../store/useAppStore';
 import { useVttStore } from '../../store/useVttStore';
 import {
@@ -47,9 +49,10 @@ interface QuickAttackRollLog {
   tokenName: string;
   attackName: string;
   d20: number;
+  bonus: number;
   attackTotal: number;
   damageTotal: number;
-  damageExpr: string;
+  damageBreakdown: string;
   isCrit: boolean;
   isFumble: boolean;
 }
@@ -65,23 +68,6 @@ const COLOR_SWATCHES = [
   '#f59e0b',
   '#94a3b8',
 ];
-
-function rollDiceExpression(expr: string, doubleDice = false): number {
-  const cleaned = expr.replace(/\s+/g, '').toLowerCase();
-  const match = cleaned.match(/^(\d+)d(\d+)([+-]\d+)?$/);
-  if (!match) {
-    const num = parseInt(cleaned, 10);
-    return isNaN(num) ? 1 : num;
-  }
-  const count = parseInt(match[1], 10) * (doubleDice ? 2 : 1);
-  const sides = parseInt(match[2], 10);
-  const mod = match[3] ? parseInt(match[3], 10) : 0;
-  let sum = mod;
-  for (let i = 0; i < Math.min(count, 40); i++) {
-    sum += rollSingleDieRaw(sides);
-  }
-  return Math.max(1, sum);
-}
 
 async function compressAvatarFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -139,6 +125,10 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
   const [hpInput, setHpInput] = useState('5');
   const [syncedFeedback, setSyncedFeedback] = useState(false);
   const [attackLog, setAttackLog] = useState<QuickAttackRollLog | null>(null);
+  const [isAddingAttack, setIsAddingAttack] = useState(false);
+  const [newAtkName, setNewAtkName] = useState('');
+  const [newAtkBonus, setNewAtkBonus] = useState('4');
+  const [newAtkDamage, setNewAtkDamage] = useState('1d8+2');
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedToken: VttToken | null =
@@ -181,7 +171,7 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
     const isCrit = d20 === 20;
     const isFumble = d20 === 1;
     const attackTotal = d20 + attack.bonus;
-    const damageTotal = rollDiceExpression(attack.damage, isCrit);
+    const dmg = rollVttDamageExpression(attack.damage, isCrit, rollSingleDieRaw);
 
     if (soundEnabled) {
       if (isCrit) playCriticalSuccessSound();
@@ -194,11 +184,37 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
       tokenName: token.name,
       attackName: attack.name,
       d20,
+      bonus: attack.bonus,
       attackTotal,
-      damageTotal,
-      damageExpr: attack.damage,
+      damageTotal: dmg.total,
+      damageBreakdown: dmg.breakdown,
       isCrit,
       isFumble,
+    });
+  };
+
+  const handleAddCustomAttack = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedToken || !newAtkName.trim()) return;
+    const nextAttack: VttTokenAttack = {
+      id: `atk-${crypto.randomUUID()}`,
+      name: newAtkName.trim(),
+      bonus: Number.isFinite(Number(newAtkBonus)) ? Math.round(Number(newAtkBonus)) : 0,
+      damage: newAtkDamage.trim() || '1d6',
+    };
+    updateToken(selectedToken.id, {
+      attacks: [...(selectedToken.attacks || []), nextAttack],
+    });
+    setNewAtkName('');
+    setNewAtkBonus('4');
+    setNewAtkDamage('1d8+2');
+    setIsAddingAttack(false);
+  };
+
+  const handleRemoveAttack = (attackId: string) => {
+    if (!selectedToken) return;
+    updateToken(selectedToken.id, {
+      attacks: (selectedToken.attacks || []).filter((a) => a.id !== attackId),
     });
   };
 
@@ -689,10 +705,17 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                   <label className="text-[10px] text-slate-400 block mb-1">CA</label>
                   <input
                     type="number"
-                    min={1}
+                    min={0}
                     max={40}
                     value={selectedToken.ac}
-                    onChange={(e) => updateToken(selectedToken.id, { ac: Number(e.target.value) || 10 })}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') return;
+                      const parsed = parseInt(raw, 10);
+                      if (!Number.isNaN(parsed)) {
+                        updateToken(selectedToken.id, { ac: Math.max(0, Math.min(40, parsed)) });
+                      }
+                    }}
                     className="w-full px-2 py-1.5 rounded-lg bg-black/50 border border-white/15 font-mono text-xs font-bold tabular-nums text-white focus:outline-none focus:border-cyan-400"
                   />
                 </div>
@@ -701,9 +724,14 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                   <input
                     type="number"
                     value={selectedToken.initiativeMod}
-                    onChange={(e) =>
-                      updateToken(selectedToken.id, { initiativeMod: Number(e.target.value) || 0 })
-                    }
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '' || raw === '-') return;
+                      const parsed = parseInt(raw, 10);
+                      if (!Number.isNaN(parsed)) {
+                        updateToken(selectedToken.id, { initiativeMod: parsed });
+                      }
+                    }}
                     className="w-full px-2 py-1.5 rounded-lg bg-black/50 border border-white/15 font-mono text-xs font-bold tabular-nums text-white focus:outline-none focus:border-cyan-400"
                   />
                 </div>
@@ -819,32 +847,97 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                 </div>
               </div>
 
-              {/* Quick Attacks (from Character Sheet or Forja Encounter) */}
-              {selectedToken.attacks && selectedToken.attacks.length > 0 && (
+              {/* Quick Attacks (available on any token, imported or manual) */}
+              {selectedToken.faction !== 'object' && (
                 <div className="space-y-2 pt-2 border-t border-white/10">
-                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                    <Sword className="w-3.5 h-3.5 text-cyan-400" />
-                    Ataques Rápidos
-                  </span>
-                  <div className="space-y-1.5">
-                    {selectedToken.attacks.map((atk) => (
-                      <button
-                        key={atk.id}
-                        type="button"
-                        onClick={() => handleQuickAttack(selectedToken, atk)}
-                        className="w-full p-2 rounded-lg bg-black/40 hover:bg-cyan-500/15 border border-white/10 hover:border-cyan-400/40 text-left transition cursor-pointer flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-white truncate">{atk.name}</p>
-                          <p className="text-[10px] font-mono text-slate-400 truncate">
-                            {atk.bonus >= 0 ? `+${atk.bonus}` : atk.bonus} acerto · {atk.damage}
-                            {atk.damageType ? ` ${atk.damageType}` : ''}
-                          </p>
-                        </div>
-                        <Dices className="w-4 h-4 text-cyan-300 shrink-0" />
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Sword className="w-3.5 h-3.5 text-cyan-400" />
+                      Ataques Rápidos
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingAttack((v) => !v)}
+                      className="text-[10px] font-bold text-cyan-300 hover:text-cyan-200 flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{isAddingAttack ? 'Cancelar' : 'Adicionar'}</span>
+                    </button>
                   </div>
+
+                  {isAddingAttack && (
+                    <form
+                      onSubmit={handleAddCustomAttack}
+                      className="p-2.5 rounded-xl bg-black/45 border border-cyan-400/30 space-y-2"
+                    >
+                      <input
+                        type="text"
+                        value={newAtkName}
+                        onChange={(e) => setNewAtkName(e.target.value)}
+                        placeholder="Nome (ex.: Espada Longa)"
+                        className="w-full px-2 py-1.5 rounded-lg bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-cyan-400"
+                        autoFocus
+                      />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="number"
+                          value={newAtkBonus}
+                          onChange={(e) => setNewAtkBonus(e.target.value)}
+                          placeholder="Acerto (+4)"
+                          className="w-full px-2 py-1.5 rounded-lg bg-black/60 border border-white/15 font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
+                        />
+                        <input
+                          type="text"
+                          value={newAtkDamage}
+                          onChange={(e) => setNewAtkDamage(e.target.value)}
+                          placeholder="Dano (1d8+2)"
+                          className="w-full px-2 py-1.5 rounded-lg bg-black/60 border border-white/15 font-mono text-xs text-white focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={!newAtkName.trim()}
+                        className="w-full py-1.5 rounded-lg bg-cyan-500/25 hover:bg-cyan-500/35 disabled:opacity-40 border border-cyan-400/40 text-cyan-100 text-[11px] font-bold cursor-pointer"
+                      >
+                        Salvar Ataque
+                      </button>
+                    </form>
+                  )}
+
+                  {selectedToken.attacks && selectedToken.attacks.length > 0 && (
+                    <div className="space-y-1.5">
+                      {selectedToken.attacks.map((atk) => (
+                        <div
+                          key={atk.id}
+                          className="group flex items-center gap-1"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAttack(selectedToken, atk)}
+                            className="flex-1 min-w-0 p-2 rounded-lg bg-black/40 hover:bg-cyan-500/15 border border-white/10 hover:border-cyan-400/40 text-left transition cursor-pointer flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-white truncate">{atk.name}</p>
+                              <p className="text-[10px] font-mono text-slate-400 truncate">
+                                {atk.bonus >= 0 ? `+${atk.bonus}` : atk.bonus} acerto · {atk.damage}
+                                {atk.damageType ? ` ${atk.damageType}` : ''}
+                              </p>
+                            </div>
+                            <Dices className="w-4 h-4 text-cyan-300 shrink-0" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAttack(atk.id)}
+                            title="Remover ataque"
+                            aria-label={`Remover ataque ${atk.name}`}
+                            className="p-2 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/15 transition cursor-pointer shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {attackLog && (
                     <div
@@ -857,7 +950,10 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                       }`}
                     >
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="truncate">{attackLog.tokenName} · {attackLog.attackName}</span>
+                        <span className="truncate">
+                          {attackLog.tokenName} · {attackLog.attackName}
+                          {attackLog.isCrit ? ' · CRÍTICO!' : attackLog.isFumble ? ' · FALHA CRÍTICA' : ''}
+                        </span>
                         <button
                           type="button"
                           onClick={() => setAttackLog(null)}
@@ -866,15 +962,20 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                           <X className="w-3 h-3" />
                         </button>
                       </div>
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span>
                           Acerto: <strong className="text-cyan-300">{attackLog.attackTotal}</strong>{' '}
-                          <span className="text-[10px] opacity-75">(d20={attackLog.d20})</span>
+                          <span className="text-[10px] opacity-75">
+                            (d20={attackLog.d20}{attackLog.bonus >= 0 ? `+${attackLog.bonus}` : attackLog.bonus})
+                          </span>
                         </span>
                         <span>
                           Dano: <strong className="text-rose-300">{attackLog.damageTotal}</strong>
                         </span>
                       </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Fórmula: {attackLog.damageBreakdown}
+                      </p>
                     </div>
                   )}
                 </div>

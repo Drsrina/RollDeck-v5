@@ -10,11 +10,13 @@ import {
   findFreeGridSlot,
   mapBiomaToSurfacePreset,
   snapPointToGrid,
+  stepTokenByDirection,
 } from '../lib/vttGrid';
 import type { NoteNode } from '../types';
 import {
   VTT_SURFACE_PRESETS,
   type VttBackgroundImage,
+  type VttCombatState,
   type VttGridConfig,
   type VttScene,
   type VttSurfacePreset,
@@ -56,6 +58,12 @@ function sortOrderByInitiative(tokens: VttToken[]): string[] {
     .map((t) => t.id);
 }
 
+interface VttUndoSnapshot {
+  sceneId: string;
+  tokens: VttToken[];
+  combat: VttCombatState;
+}
+
 interface VttState {
   scenes: VttScene[];
   activeSceneId: string;
@@ -64,6 +72,7 @@ interface VttState {
   sidebarTab: 'combat' | 'inspector';
   isRightPanelOpen: boolean;
   cameraFocusRequest: { x: number; y: number; nonce: number } | null;
+  undoStack: VttUndoSnapshot[];
 
   // Cross-module cache of the most recent encounters generated in Forja de Mundos
   recentForjaEncounters: EncontroGerado[];
@@ -97,11 +106,14 @@ interface VttState {
   addToken: (tokenInput: Omit<VttToken, 'id' | 'x' | 'y'> & { x?: number; y?: number }) => VttToken;
   updateToken: (tokenId: string, patch: Partial<VttToken>) => void;
   moveToken: (tokenId: string, x: number, y: number, applySnap?: boolean) => void;
+  stepSelectedToken: (dx: number, dy: number) => void;
+  snapAllTokensToGrid: () => void;
   duplicateToken: (tokenId: string) => void;
   deleteToken: (tokenId: string) => void;
   clearAllTokens: () => void;
   adjustTokenHp: (tokenId: string, delta: number) => void;
   toggleTokenCondition: (tokenId: string, condition: string) => void;
+  undo: () => void;
 
   // Cross-module Importers
   importCharacterNotes: (notes: NoteNode[]) => number;
@@ -141,6 +153,27 @@ export const useVttStore = create<VttState>((set, get) => {
     return updated;
   };
 
+  const pushUndoSnapshot = () => {
+    const state = get();
+    const current = state.scenes.find((s) => s.id === state.activeSceneId) || state.scenes[0];
+    if (!current) return;
+    const snap: VttUndoSnapshot = {
+      sceneId: current.id,
+      tokens: current.tokens.map((t) => ({
+        ...t,
+        conditions: [...t.conditions],
+        attacks: t.attacks ? t.attacks.map((a) => ({ ...a })) : undefined,
+      })),
+      combat: {
+        ...current.combat,
+        order: [...current.combat.order],
+      },
+    };
+    set((s) => ({
+      undoStack: [...s.undoStack.slice(-24), snap],
+    }));
+  };
+
   return {
     scenes: [initialDefaultScene],
     activeSceneId: initialDefaultScene.id,
@@ -149,6 +182,7 @@ export const useVttStore = create<VttState>((set, get) => {
     sidebarTab: 'combat',
     isRightPanelOpen: true,
     cameraFocusRequest: null,
+    undoStack: [],
     recentForjaEncounters: [],
 
     setRecentForjaEncounters: (encounters) => set({ recentForjaEncounters: encounters }),
@@ -311,6 +345,7 @@ export const useVttStore = create<VttState>((set, get) => {
         bloodiedThreshold: input.bloodiedThreshold ?? Math.floor(Math.max(1, input.hpMax) / 2),
       };
 
+      pushUndoSnapshot();
       mutateActiveScene((sc) => {
         const tokens = [...sc.tokens, token];
         return {
@@ -345,26 +380,57 @@ export const useVttStore = create<VttState>((set, get) => {
               patch.hpMax !== undefined ? Math.floor(nextMax / 2) : t.bloodiedThreshold,
           };
         });
+        const shouldResort =
+          patch.initiativeValue !== undefined ||
+          patch.initiativeMod !== undefined ||
+          patch.faction !== undefined;
+        const nextOrder = shouldResort ? sortOrderByInitiative(tokens) : scene.combat.order;
+        const activeStillValid =
+          scene.combat.activeTokenId && nextOrder.includes(scene.combat.activeTokenId);
         return {
           ...scene,
           tokens,
           combat: {
             ...scene.combat,
-            order:
-              patch.initiativeValue !== undefined || patch.initiativeMod !== undefined
-                ? sortOrderByInitiative(tokens)
-                : scene.combat.order,
+            order: nextOrder,
+            activeTokenId: activeStillValid ? scene.combat.activeTokenId : nextOrder[0] || null,
+            active: nextOrder.length > 0 ? scene.combat.active : false,
           },
         };
       });
     },
 
     moveToken: (tokenId, x, y, applySnap = true) => {
+      pushUndoSnapshot();
       mutateActiveScene((scene) => {
         const tokens = scene.tokens.map((t) => {
           if (t.id !== tokenId || t.locked) return t;
           const target = applySnap ? snapPointToGrid(x, y, scene.grid, t.sizeCells) : { x, y };
           return { ...t, x: target.x, y: target.y };
+        });
+        return { ...scene, tokens };
+      });
+    },
+
+    stepSelectedToken: (dx, dy) => {
+      const state = get();
+      if (!state.selectedTokenId) return;
+      const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+      const token = scene?.tokens.find((t) => t.id === state.selectedTokenId);
+      if (!scene || !token || token.locked) return;
+      const nextPos = stepTokenByDirection(token.x, token.y, dx, dy, scene.grid, token.sizeCells);
+      get().moveToken(token.id, nextPos.x, nextPos.y, false);
+    },
+
+    snapAllTokensToGrid: () => {
+      pushUndoSnapshot();
+      mutateActiveScene((scene) => {
+        if (scene.grid.type === 'none') return scene;
+        const forcedGrid = { ...scene.grid, snapToGrid: true };
+        const tokens = scene.tokens.map((t) => {
+          if (t.locked) return t;
+          const pos = snapPointToGrid(t.x, t.y, forcedGrid, t.sizeCells);
+          return { ...t, x: pos.x, y: pos.y };
         });
         return { ...scene, tokens };
       });
@@ -398,6 +464,7 @@ export const useVttStore = create<VttState>((set, get) => {
     },
 
     deleteToken: (tokenId) => {
+      pushUndoSnapshot();
       mutateActiveScene((scene) => {
         const tokens = scene.tokens.filter((t) => t.id !== tokenId);
         const order = scene.combat.order.filter((id) => id !== tokenId);
@@ -420,6 +487,7 @@ export const useVttStore = create<VttState>((set, get) => {
     },
 
     clearAllTokens: () => {
+      pushUndoSnapshot();
       mutateActiveScene((scene) => ({
         ...scene,
         tokens: [],
@@ -430,6 +498,7 @@ export const useVttStore = create<VttState>((set, get) => {
 
     adjustTokenHp: (tokenId, delta) => {
       if (delta === 0) return;
+      pushUndoSnapshot();
       const soundOn = useAppStore.getState().settings.soundEnabled;
       if (soundOn) playClickSound();
 
@@ -455,6 +524,27 @@ export const useVttStore = create<VttState>((set, get) => {
         });
         return { ...scene, tokens };
       });
+    },
+
+    undo: () => {
+      const state = get();
+      if (state.undoStack.length === 0) return;
+      // Find the most recent snapshot matching the active scene
+      const idx = [...state.undoStack]
+        .map((s, i) => ({ s, i }))
+        .reverse()
+        .find((item) => item.s.sceneId === state.activeSceneId)?.i;
+      if (idx === undefined) return;
+
+      const snapshot = state.undoStack[idx];
+      const nextStack = state.undoStack.filter((_, i) => i !== idx);
+      set({ undoStack: nextStack });
+
+      mutateActiveScene((scene) => ({
+        ...scene,
+        tokens: snapshot.tokens,
+        combat: snapshot.combat,
+      }));
     },
 
     toggleTokenCondition: (tokenId, condition) => {

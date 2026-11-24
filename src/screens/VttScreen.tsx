@@ -18,6 +18,7 @@ import {
   Sliders,
   Swords,
   Trash2,
+  Undo2,
   Users,
   X,
   ZoomIn,
@@ -84,6 +85,7 @@ export const VttScreen: React.FC = () => {
     selectedTokenId,
     activeTool,
     isRightPanelOpen,
+    undoStack,
     selectScene,
     createScene,
     renameScene,
@@ -98,6 +100,9 @@ export const VttScreen: React.FC = () => {
     setRightPanelOpen,
     deleteToken,
     clearAllTokens,
+    stepSelectedToken,
+    snapAllTokensToGrid,
+    undo,
     requestCameraFocus,
   } = useVttStore();
 
@@ -139,7 +144,7 @@ export const VttScreen: React.FC = () => {
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [isMapPopoverOpen, isSceneMenuOpen]);
 
-  // Tactical keyboard shortcuts (V, R, H, 0, Delete/Backspace)
+  // Tactical keyboard shortcuts (V, R, H, 0, Arrow keys, Ctrl+Z, Delete/Backspace)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -154,6 +159,12 @@ export const VttScreen: React.FC = () => {
       }
       if (isNewTokenOpen || importModal.open) return;
 
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+      }
+
       const key = e.key.toLowerCase();
       if (key === 'v') {
         e.preventDefault();
@@ -167,6 +178,18 @@ export const VttScreen: React.FC = () => {
       } else if (key === '0') {
         e.preventDefault();
         requestCameraFocus(0, 0);
+      } else if (selectedTokenId && e.key === 'ArrowUp') {
+        e.preventDefault();
+        stepSelectedToken(0, -1);
+      } else if (selectedTokenId && e.key === 'ArrowDown') {
+        e.preventDefault();
+        stepSelectedToken(0, 1);
+      } else if (selectedTokenId && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        stepSelectedToken(-1, 0);
+      } else if (selectedTokenId && e.key === 'ArrowRight') {
+        e.preventDefault();
+        stepSelectedToken(1, 0);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenId) {
         e.preventDefault();
         deleteToken(selectedTokenId);
@@ -182,9 +205,13 @@ export const VttScreen: React.FC = () => {
     setActiveTool,
     requestCameraFocus,
     deleteToken,
+    stepSelectedToken,
+    undo,
   ]);
 
   if (!activeScene) return null;
+
+  const canUndo = undoStack.some((snap) => snap.sceneId === activeScene.id);
 
   const handleBattlemapUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -209,7 +236,7 @@ export const VttScreen: React.FC = () => {
   };
 
   const handleZoomStep = (delta: number) => {
-    const nextZoom = Math.max(0.35, Math.min(2.6, Number((activeScene.camera.zoom + delta).toFixed(2))));
+    const nextZoom = Math.max(0.35, Math.min(2.5, Number((activeScene.camera.zoom + delta).toFixed(2))));
     setCamera({ ...activeScene.camera, zoom: nextZoom });
   };
 
@@ -455,45 +482,92 @@ export const VttScreen: React.FC = () => {
                   {mapUploadError && <p className="text-[11px] text-rose-400">{mapUploadError}</p>}
 
                   {activeScene.background && (
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <div>
-                        <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                          <span>Escala</span>
-                          <span className="font-mono tabular-nums">
-                            {Math.round(activeScene.background.scale * 100)}%
-                          </span>
-                        </label>
-                        <input
-                          type="range"
-                          min={0.25}
-                          max={3}
-                          step={0.05}
-                          value={activeScene.background.scale}
-                          onChange={(e) =>
-                            updateBackground({ scale: Number(e.target.value) })
-                          }
-                          className="w-full accent-cyan-400"
-                        />
+                    <div className="space-y-2 pt-1">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                            <span>Escala</span>
+                            <span className="font-mono tabular-nums">
+                              {Math.round(activeScene.background.scale * 100)}%
+                            </span>
+                          </label>
+                          <input
+                            type="range"
+                            min={0.25}
+                            max={3}
+                            step={0.05}
+                            value={activeScene.background.scale}
+                            onChange={(e) =>
+                              updateBackground({ scale: Number(e.target.value) })
+                            }
+                            className="w-full accent-cyan-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                            <span>Opacidade</span>
+                            <span className="font-mono tabular-nums">
+                              {Math.round(activeScene.background.opacity * 100)}%
+                            </span>
+                          </label>
+                          <input
+                            type="range"
+                            min={0.15}
+                            max={1}
+                            step={0.05}
+                            value={activeScene.background.opacity}
+                            onChange={(e) =>
+                              updateBackground({ opacity: Number(e.target.value) })
+                            }
+                            className="w-full accent-cyan-400"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                          <span>Opacidade</span>
-                          <span className="font-mono tabular-nums">
-                            {Math.round(activeScene.background.opacity * 100)}%
-                          </span>
-                        </label>
-                        <input
-                          type="range"
-                          min={0.15}
-                          max={1}
-                          step={0.05}
-                          value={activeScene.background.opacity}
-                          onChange={(e) =>
-                            updateBackground({ opacity: Number(e.target.value) })
-                          }
-                          className="w-full accent-cyan-400"
-                        />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                            <span>Alinhar X</span>
+                            <span className="font-mono tabular-nums">{activeScene.background.x}px</span>
+                          </label>
+                          <input
+                            type="range"
+                            min={-256}
+                            max={256}
+                            step={2}
+                            value={activeScene.background.x}
+                            onChange={(e) => updateBackground({ x: Number(e.target.value) })}
+                            className="w-full accent-purple-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                            <span>Alinhar Y</span>
+                            <span className="font-mono tabular-nums">{activeScene.background.y}px</span>
+                          </label>
+                          <input
+                            type="range"
+                            min={-256}
+                            max={256}
+                            step={2}
+                            value={activeScene.background.y}
+                            onChange={(e) => updateBackground({ y: Number(e.target.value) })}
+                            className="w-full accent-purple-400"
+                          />
+                        </div>
                       </div>
+
+                      {(activeScene.background.x !== 0 ||
+                        activeScene.background.y !== 0 ||
+                        activeScene.background.scale !== 1) && (
+                        <button
+                          type="button"
+                          onClick={() => updateBackground({ x: 0, y: 0, scale: 1 })}
+                          className="w-full py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-300 transition cursor-pointer"
+                        >
+                          Centralizar e Resetar Escala
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -531,9 +605,32 @@ export const VttScreen: React.FC = () => {
 
                 {/* Grid Fine-tuning */}
                 <div className="space-y-2.5 border-t border-white/10 pt-3">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-300 block">
-                    Ajustes da Grade
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-300">
+                      Ajustes da Grade
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {[
+                        { color: '#94a3b8', label: 'Claro' },
+                        { color: '#22d3ee', label: 'Ciano' },
+                        { color: '#f59e0b', label: 'Âmbar' },
+                        { color: '#0f172a', label: 'Escuro' },
+                      ].map((swatch) => (
+                        <button
+                          key={swatch.color}
+                          type="button"
+                          onClick={() => updateGrid({ color: swatch.color })}
+                          title={`Cor da grade: ${swatch.label}`}
+                          className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                            activeScene.grid.color === swatch.color
+                              ? 'border-white scale-115'
+                              : 'border-white/25 opacity-75 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: swatch.color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                   <div>
                     <label className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
                       <span>Tamanho da Célula</span>
@@ -591,6 +688,16 @@ export const VttScreen: React.FC = () => {
                       ))}
                     </div>
                   </div>
+                  {activeScene.tokens.length > 0 && activeScene.grid.type !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() => snapAllTokensToGrid()}
+                      className="w-full py-1.5 px-2.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/35 text-[11px] font-bold text-cyan-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Magnet className="w-3.5 h-3.5" />
+                      <span>Re-alinhar Tokens ao Grid</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -745,6 +852,17 @@ export const VttScreen: React.FC = () => {
           </button>
 
           <div className="flex-1" />
+
+          <button
+            type="button"
+            disabled={!canUndo}
+            onClick={undo}
+            className="w-9 h-9 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition cursor-pointer"
+            title="Desfazer última ação (Ctrl+Z)"
+            aria-label="Desfazer última ação"
+          >
+            <Undo2 className="w-4 h-4" />
+          </button>
 
           {activeScene.tokens.length > 0 && (
             <button

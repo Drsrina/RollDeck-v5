@@ -117,8 +117,8 @@ export default function App() {
         return;
       }
 
-      // Space to roll current tray
-      if (e.code === 'Space' && !e.repeat) {
+      // Space to roll current tray (skip on VTT so Spacebar pans the tactical canvas cleanly)
+      if (e.code === 'Space' && !e.repeat && activeTab !== 'vtt') {
         const totalDice = tray.reduce((acc, t) => acc + t.count, 0);
         if (totalDice > 0 && !isRolling) {
           e.preventDefault();
@@ -136,6 +136,7 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    activeTab,
     setActiveTab,
     tray,
     isRolling,
