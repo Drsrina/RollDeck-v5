@@ -1,11 +1,14 @@
 import type { NoteNode } from '../types';
-import type {
-  VttGridConfig,
-  VttScene,
-  VttSurfacePreset,
-  VttToken,
-  VttTokenAttack,
-  VttTokenSize,
+import {
+  DEFAULT_VTT_WEATHER,
+  VTT_WEATHER_PRESETS,
+  type VttGridConfig,
+  type VttScene,
+  type VttSurfacePreset,
+  type VttToken,
+  type VttTokenAttack,
+  type VttTokenSize,
+  type VttWeatherConfig,
 } from '../types/vtt';
 import type { BiomaEncontro, EncontroGerado } from './forja/encounterGenerator';
 
@@ -508,12 +511,91 @@ export function stepTokenByDirection(
     : { x: nextX, y: nextY };
 }
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+/**
+ * Safely normalizes an optional or legacy scene weather config into a complete VttWeatherConfig.
+ */
+export function normalizeWeatherConfig(weather?: Partial<VttWeatherConfig>): VttWeatherConfig {
+  const base = DEFAULT_VTT_WEATHER;
+  if (!weather) {
+    return {
+      ...base,
+      layers: { ...base.layers },
+    };
+  }
+  return {
+    enabled: Boolean(weather.enabled),
+    layers: {
+      rain: clamp01(weather.layers?.rain ?? base.layers.rain),
+      snow: clamp01(weather.layers?.snow ?? base.layers.snow),
+      wind: clamp01(weather.layers?.wind ?? base.layers.wind),
+      fog: clamp01(weather.layers?.fog ?? base.layers.fog),
+      embers: clamp01(weather.layers?.embers ?? base.layers.embers),
+      lightning: clamp01(weather.layers?.lightning ?? base.layers.lightning),
+    },
+    windSpeed: clamp01(weather.windSpeed ?? base.windSpeed),
+    windAngle: Math.max(-60, Math.min(60, Number.isFinite(weather.windAngle) ? Number(weather.windAngle) : base.windAngle)),
+    ambientTone: weather.ambientTone ?? base.ambientTone,
+    ambientOpacity: Math.max(0, Math.min(0.65, Number.isFinite(weather.ambientOpacity) ? Number(weather.ambientOpacity) : base.ambientOpacity)),
+    audioEnabled: Boolean(weather.audioEnabled),
+    audioVolume: clamp01(weather.audioVolume ?? base.audioVolume),
+  };
+}
+
+/**
+ * Suggests a fitting initial atmospheric weather preset when deploying a Forja encounter
+ * into a brand-new VTT scene based on its biome (audio remains muted by default until GM enables it).
+ */
+export function mapBiomaToDefaultWeather(bioma?: BiomaEncontro): VttWeatherConfig {
+  const pickPreset = (id: string): VttWeatherConfig => {
+    const found = VTT_WEATHER_PRESETS.find((p) => p.id === id);
+    if (!found) return normalizeWeatherConfig();
+    return normalizeWeatherConfig({
+      ...found.weather,
+      audioEnabled: false,
+      audioVolume: DEFAULT_VTT_WEATHER.audioVolume,
+    });
+  };
+
+  switch (bioma) {
+    case 'pantano':
+      return pickPreset('fog');
+    case 'montanha':
+      return pickPreset('blizzard');
+    case 'costa':
+      return pickPreset('rain');
+    case 'floresta':
+    case 'planicie':
+    case 'deserto':
+      return pickPreset('breeze');
+    case 'masmorra':
+      return pickPreset('dungeon');
+    case 'urbano':
+      return normalizeWeatherConfig({
+        enabled: true,
+        layers: { rain: 0.35, snow: 0, wind: 0.15, fog: 0.2, embers: 0, lightning: 0 },
+        windSpeed: 0.28,
+        windAngle: 14,
+        ambientTone: 'dusk',
+        ambientOpacity: 0.2,
+        audioEnabled: false,
+      });
+    default:
+      return normalizeWeatherConfig();
+  }
+}
+
 /**
  * Creates a clean default tactical VTT scene ready for immediate play.
  */
 export function createDefaultVttScene(
   name = 'Arena Principal',
-  surfacePreset: VttSurfacePreset = 'slate'
+  surfacePreset: VttSurfacePreset = 'slate',
+  initialWeather?: VttWeatherConfig
 ): VttScene {
   const now = Date.now();
   return {
@@ -544,5 +626,6 @@ export function createDefaultVttScene(
       activeTokenId: null,
       order: [],
     },
+    weather: normalizeWeatherConfig(initialWeather),
   };
 }

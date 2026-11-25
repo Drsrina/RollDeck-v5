@@ -6,7 +6,9 @@ import {
   createTokenFromCharacterNote,
   createTokensFromEncounter,
   findFreeGridSlot,
+  mapBiomaToDefaultWeather,
   measureGridDistance,
+  normalizeWeatherConfig,
   parseMonsterSizeCells,
   pixelToAxialHex,
   rollVttDamageExpression,
@@ -14,7 +16,7 @@ import {
   stepTokenByDirection,
 } from './vttGrid';
 import type { NoteNode } from '../types';
-import type { VttGridConfig } from '../types/vtt';
+import { VTT_WEATHER_PRESETS, type VttGridConfig } from '../types/vtt';
 
 const SQUARE_GRID: VttGridConfig = {
   type: 'square',
@@ -178,5 +180,31 @@ describe('vttGrid math & importers', () => {
     const hexOrigin = axialHexToPixel(0, 0, HEX_GRID.cellSize);
     const hexRight = stepTokenByDirection(hexOrigin.x, hexOrigin.y, 1, 0, HEX_GRID, 1);
     expect(pixelToAxialHex(hexRight.x, hexRight.y, HEX_GRID.cellSize)).toEqual({ q: 1, r: 0 });
+  });
+
+  it('normalizes legacy/out-of-bounds weather configs and maps Forja biomes to matching atmosphere', () => {
+    const fallback = normalizeWeatherConfig(undefined);
+    expect(fallback.enabled).toBe(false);
+    expect(fallback.layers.rain).toBe(0);
+
+    const clamped = normalizeWeatherConfig({
+      enabled: true,
+      layers: { rain: 5, snow: -2, wind: 0.5, fog: 0.2, embers: 1.5, lightning: 0 },
+      windAngle: 120,
+      ambientOpacity: 2,
+    });
+    expect(clamped.layers.rain).toBe(1);
+    expect(clamped.layers.snow).toBe(0);
+    expect(clamped.layers.embers).toBe(1);
+    expect(clamped.windAngle).toBe(60);
+    expect(clamped.ambientOpacity).toBe(0.65);
+
+    expect(VTT_WEATHER_PRESETS.length).toBeGreaterThanOrEqual(8);
+    expect(mapBiomaToDefaultWeather('pantano').layers.fog).toBeGreaterThan(0);
+    expect(mapBiomaToDefaultWeather('montanha').layers.snow).toBeGreaterThan(0);
+    expect(mapBiomaToDefaultWeather('masmorra').layers.embers).toBeGreaterThan(0);
+    expect(mapBiomaToDefaultWeather('costa').layers.rain).toBeGreaterThan(0);
+    // Audio stays muted by default until GM turns it on
+    expect(mapBiomaToDefaultWeather('montanha').audioEnabled).toBe(false);
   });
 });

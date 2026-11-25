@@ -73,6 +73,28 @@ export interface VttCombatState {
   order: string[];
 }
 
+export type VttWeatherLayerId = 'rain' | 'snow' | 'wind' | 'fog' | 'embers' | 'lightning';
+
+export type VttAmbientTone = 'none' | 'dusk' | 'night' | 'dungeon' | 'inferno';
+
+export interface VttWeatherConfig {
+  enabled: boolean;
+  layers: Record<VttWeatherLayerId, number>; // 0 = off, 0.1..1 = intensity
+  windSpeed: number; // 0..1
+  windAngle: number; // -60..60 degrees (0 = straight down / calm, positive = blowing right)
+  ambientTone: VttAmbientTone;
+  ambientOpacity: number; // 0..0.65
+  audioEnabled: boolean;
+  audioVolume: number; // 0..1
+}
+
+export interface VttWeatherPreset {
+  id: string;
+  label: string;
+  accent: string;
+  weather: Omit<VttWeatherConfig, 'audioEnabled' | 'audioVolume'>;
+}
+
 export interface VttScene {
   id: string;
   name: string;
@@ -88,6 +110,7 @@ export interface VttScene {
   };
   tokens: VttToken[];
   combat: VttCombatState;
+  weather?: VttWeatherConfig;
 }
 
 export const VTT_CONDITIONS: { id: string; label: string; short: string; color: string }[] = [
@@ -159,3 +182,176 @@ export const VTT_SIZE_LABELS: Record<VttTokenSize, string> = {
   3: 'Enorme (3×3)',
   4: 'Imenso (4×4)',
 };
+
+export const DEFAULT_VTT_WEATHER: VttWeatherConfig = {
+  enabled: false,
+  layers: {
+    rain: 0,
+    snow: 0,
+    wind: 0,
+    fog: 0,
+    embers: 0,
+    lightning: 0,
+  },
+  windSpeed: 0.35,
+  windAngle: 18,
+  ambientTone: 'none',
+  ambientOpacity: 0.25,
+  audioEnabled: false,
+  audioVolume: 0.45,
+};
+
+export const VTT_WEATHER_LAYER_META: Record<
+  VttWeatherLayerId,
+  { label: string; color: string; defaultIntensity: number }
+> = {
+  rain: { label: 'Chuva', color: '#38bdf8', defaultIntensity: 0.65 },
+  snow: { label: 'Neve', color: '#e2e8f0', defaultIntensity: 0.6 },
+  wind: { label: 'Vento', color: '#94a3b8', defaultIntensity: 0.55 },
+  fog: { label: 'Neblina', color: '#cbd5e1', defaultIntensity: 0.55 },
+  embers: { label: 'Centelhas', color: '#fb923c', defaultIntensity: 0.65 },
+  lightning: { label: 'Relâmpagos', color: '#a5f3fc', defaultIntensity: 0.5 },
+};
+
+export const VTT_AMBIENT_TONE_META: Record<
+  VttAmbientTone,
+  { label: string; swatch: string; tint: string; vignette: string }
+> = {
+  none: {
+    label: 'Normal',
+    swatch: '#475569',
+    tint: 'rgba(0,0,0,0)',
+    vignette: 'rgba(0,0,0,0)',
+  },
+  dusk: {
+    label: 'Entardecer',
+    swatch: '#f97316',
+    tint: 'rgba(180, 83, 9, 0.22)',
+    vignette: 'rgba(45, 16, 44, 0.45)',
+  },
+  night: {
+    label: 'Noite',
+    swatch: '#1d4ed8',
+    tint: 'rgba(12, 24, 68, 0.38)',
+    vignette: 'rgba(2, 6, 23, 0.68)',
+  },
+  dungeon: {
+    label: 'Masmorra',
+    swatch: '#4c1d95',
+    tint: 'rgba(15, 10, 30, 0.32)',
+    vignette: 'rgba(2, 4, 12, 0.72)',
+  },
+  inferno: {
+    label: 'Brasas',
+    swatch: '#dc2626',
+    tint: 'rgba(153, 27, 27, 0.24)',
+    vignette: 'rgba(30, 6, 6, 0.55)',
+  },
+};
+
+export const VTT_WEATHER_PRESETS: VttWeatherPreset[] = [
+  {
+    id: 'clear',
+    label: 'Limpo',
+    accent: '#94a3b8',
+    weather: {
+      enabled: false,
+      layers: { rain: 0, snow: 0, wind: 0, fog: 0, embers: 0, lightning: 0 },
+      windSpeed: 0.25,
+      windAngle: 15,
+      ambientTone: 'none',
+      ambientOpacity: 0,
+    },
+  },
+  {
+    id: 'rain',
+    label: 'Chuva',
+    accent: '#38bdf8',
+    weather: {
+      enabled: true,
+      layers: { rain: 0.65, snow: 0, wind: 0.25, fog: 0.15, embers: 0, lightning: 0 },
+      windSpeed: 0.4,
+      windAngle: 18,
+      ambientTone: 'night',
+      ambientOpacity: 0.18,
+    },
+  },
+  {
+    id: 'storm',
+    label: 'Tempestade',
+    accent: '#22d3ee',
+    weather: {
+      enabled: true,
+      layers: { rain: 0.92, snow: 0, wind: 0.72, fog: 0.25, embers: 0, lightning: 0.65 },
+      windSpeed: 0.78,
+      windAngle: 30,
+      ambientTone: 'night',
+      ambientOpacity: 0.38,
+    },
+  },
+  {
+    id: 'blizzard',
+    label: 'Nevasca',
+    accent: '#e2e8f0',
+    weather: {
+      enabled: true,
+      layers: { rain: 0, snow: 0.85, wind: 0.6, fog: 0.35, embers: 0, lightning: 0 },
+      windSpeed: 0.68,
+      windAngle: 26,
+      ambientTone: 'night',
+      ambientOpacity: 0.2,
+    },
+  },
+  {
+    id: 'breeze',
+    label: 'Vento & Folhas',
+    accent: '#34d399',
+    weather: {
+      enabled: true,
+      layers: { rain: 0, snow: 0, wind: 0.65, fog: 0, embers: 0, lightning: 0 },
+      windSpeed: 0.55,
+      windAngle: 32,
+      ambientTone: 'dusk',
+      ambientOpacity: 0.16,
+    },
+  },
+  {
+    id: 'fog',
+    label: 'Névoa Densa',
+    accent: '#cbd5e1',
+    weather: {
+      enabled: true,
+      layers: { rain: 0, snow: 0, wind: 0.15, fog: 0.82, embers: 0, lightning: 0 },
+      windSpeed: 0.2,
+      windAngle: 12,
+      ambientTone: 'dungeon',
+      ambientOpacity: 0.28,
+    },
+  },
+  {
+    id: 'embers',
+    label: 'Fogo & Centelhas',
+    accent: '#fb923c',
+    weather: {
+      enabled: true,
+      layers: { rain: 0, snow: 0, wind: 0.25, fog: 0.2, embers: 0.85, lightning: 0 },
+      windSpeed: 0.38,
+      windAngle: 14,
+      ambientTone: 'inferno',
+      ambientOpacity: 0.3,
+    },
+  },
+  {
+    id: 'dungeon',
+    label: 'Masmorra',
+    accent: '#a855f7',
+    weather: {
+      enabled: true,
+      layers: { rain: 0, snow: 0, wind: 0, fog: 0.35, embers: 0.28, lightning: 0 },
+      windSpeed: 0.15,
+      windAngle: 8,
+      ambientTone: 'dungeon',
+      ambientOpacity: 0.42,
+    },
+  },
+];

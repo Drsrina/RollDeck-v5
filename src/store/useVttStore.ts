@@ -8,13 +8,16 @@ import {
   createTokenFromCharacterNote,
   createTokensFromEncounter,
   findFreeGridSlot,
+  mapBiomaToDefaultWeather,
   mapBiomaToSurfacePreset,
+  normalizeWeatherConfig,
   snapPointToGrid,
   stepTokenByDirection,
 } from '../lib/vttGrid';
 import type { NoteNode } from '../types';
 import {
   VTT_SURFACE_PRESETS,
+  VTT_WEATHER_PRESETS,
   type VttBackgroundImage,
   type VttCombatState,
   type VttGridConfig,
@@ -22,6 +25,8 @@ import {
   type VttSurfacePreset,
   type VttToken,
   type VttToolMode,
+  type VttWeatherConfig,
+  type VttWeatherLayerId,
 } from '../types/vtt';
 import { useAppStore } from './useAppStore';
 import { useMapStore } from './useMapStore';
@@ -72,6 +77,7 @@ interface VttState {
   sidebarTab: 'combat' | 'inspector';
   isRightPanelOpen: boolean;
   cameraFocusRequest: { x: number; y: number; nonce: number } | null;
+  lightningPulseNonce: number;
   undoStack: VttUndoSnapshot[];
 
   // Cross-module cache of the most recent encounters generated in Forja de Mundos
@@ -87,19 +93,28 @@ interface VttState {
   setSidebarTab: (tab: 'combat' | 'inspector') => void;
   setRightPanelOpen: (open: boolean) => void;
   requestCameraFocus: (x: number, y: number) => void;
+  triggerLightningPulse: () => void;
 
   // Scene CRUD
   selectScene: (sceneId: string) => void;
-  createScene: (name?: string, surfacePreset?: VttSurfacePreset) => VttScene;
+  createScene: (
+    name?: string,
+    surfacePreset?: VttSurfacePreset,
+    initialWeather?: VttWeatherConfig
+  ) => VttScene;
   renameScene: (sceneId: string, name: string) => void;
   duplicateScene: (sceneId: string) => void;
   deleteScene: (sceneId: string) => void;
 
-  // Grid, Surface, Background & Camera
+  // Grid, Surface, Background, Weather & Camera
   updateGrid: (patch: Partial<VttGridConfig>) => void;
   setSurfacePreset: (preset: VttSurfacePreset) => void;
   setBackground: (bg: VttBackgroundImage | null) => void;
   updateBackground: (patch: Partial<VttBackgroundImage>) => void;
+  updateWeather: (patch: Partial<VttWeatherConfig>) => void;
+  setWeatherLayer: (layerId: VttWeatherLayerId, intensity: number) => void;
+  applyWeatherPreset: (presetId: string) => void;
+  clearWeather: () => void;
   setCamera: (camera: { x: number; y: number; zoom: number }) => void;
 
   // Token CRUD & Combat Actions
@@ -182,6 +197,7 @@ export const useVttStore = create<VttState>((set, get) => {
     sidebarTab: 'combat',
     isRightPanelOpen: true,
     cameraFocusRequest: null,
+    lightningPulseNonce: 0,
     undoStack: [],
     recentForjaEncounters: [],
 
@@ -193,7 +209,9 @@ export const useVttStore = create<VttState>((set, get) => {
         set({ scenes: [fallback], activeSceneId: fallback.id, selectedTokenId: null });
         return;
       }
-      const sorted = [...scenes].sort((a, b) => b.updatedAt - a.updatedAt);
+      const sorted = [...scenes]
+        .map((sc) => ({ ...sc, weather: normalizeWeatherConfig(sc.weather) }))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
       const existingActive = get().activeSceneId;
       const keepActive = sorted.some((s) => s.id === existingActive) ? existingActive : sorted[0].id;
       set({ scenes: sorted, activeSceneId: keepActive });
@@ -211,6 +229,7 @@ export const useVttStore = create<VttState>((set, get) => {
     setSidebarTab: (tab) => set({ sidebarTab: tab, isRightPanelOpen: true }),
     setRightPanelOpen: (open) => set({ isRightPanelOpen: open }),
     requestCameraFocus: (x, y) => set({ cameraFocusRequest: { x, y, nonce: Date.now() + Math.random() } }),
+    triggerLightningPulse: () => set((s) => ({ lightningPulseNonce: s.lightningPulseNonce + 1 })),
 
     selectScene: (sceneId) => {
       const exists = get().scenes.some((s) => s.id === sceneId);
@@ -218,9 +237,13 @@ export const useVttStore = create<VttState>((set, get) => {
       set({ activeSceneId: sceneId, selectedTokenId: null });
     },
 
-    createScene: (name, surfacePreset = 'slate') => {
+    createScene: (name, surfacePreset = 'slate', initialWeather) => {
       const count = get().scenes.length + 1;
-      const scene = createDefaultVttScene(name?.trim() || `Cena ${count}`, surfacePreset);
+      const scene = createDefaultVttScene(
+        name?.trim() || `Cena ${count}`,
+        surfacePreset,
+        initialWeather
+      );
       scene.grid.color = VTT_SURFACE_PRESETS[surfacePreset].gridColor;
       set((s) => ({
         scenes: [scene, ...s.scenes],
@@ -312,6 +335,56 @@ export const useVttStore = create<VttState>((set, get) => {
           background: { ...scene.background, ...patch },
         };
       });
+    },
+
+    updateWeather: (patch) => {
+      mutateActiveScene((scene) => {
+        const current = normalizeWeatherConfig(scene.weather);
+        const next = normalizeWeatherConfig({
+          ...current,
+          ...patch,
+          layers: patch.layers ? { ...current.layers, ...patch.layers } : current.layers,
+        });
+        return { ...scene, weather: next };
+      });
+    },
+
+    setWeatherLayer: (layerId, intensity) => {
+      mutateActiveScene((scene) => {
+        const current = normalizeWeatherConfig(scene.weather);
+        const clamped = Math.max(0, Math.min(1, Number.isFinite(intensity) ? intensity : 0));
+        const nextLayers = { ...current.layers, [layerId]: clamped };
+        const hasAnyActive =
+          Object.values(nextLayers).some((v) => v > 0) || current.ambientTone !== 'none';
+        return {
+          ...scene,
+          weather: normalizeWeatherConfig({
+            ...current,
+            enabled: clamped > 0 ? true : hasAnyActive ? current.enabled : false,
+            layers: nextLayers,
+          }),
+        };
+      });
+    },
+
+    applyWeatherPreset: (presetId) => {
+      const preset = VTT_WEATHER_PRESETS.find((p) => p.id === presetId);
+      if (!preset) return;
+      mutateActiveScene((scene) => {
+        const current = normalizeWeatherConfig(scene.weather);
+        return {
+          ...scene,
+          weather: normalizeWeatherConfig({
+            ...preset.weather,
+            audioEnabled: current.audioEnabled,
+            audioVolume: current.audioVolume,
+          }),
+        };
+      });
+    },
+
+    clearWeather: () => {
+      get().applyWeatherPreset('clear');
     },
 
     setCamera: (camera) => {
@@ -627,7 +700,8 @@ export const useVttStore = create<VttState>((set, get) => {
 
       if (mode === 'new-scene') {
         const preset = mapBiomaToSurfacePreset(encounter.bioma);
-        const created = get().createScene(encounter.titulo, preset);
+        const autoWeather = mapBiomaToDefaultWeather(encounter.bioma);
+        const created = get().createScene(encounter.titulo, preset, autoWeather);
         targetSceneId = created.id;
       }
 

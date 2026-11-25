@@ -29,6 +29,8 @@ import { VttCanvas } from '../components/vtt/VttCanvas';
 import { VttCombatSidebar } from '../components/vtt/VttCombatSidebar';
 import { VttImportModal } from '../components/vtt/VttImportModal';
 import { VttTokenModal } from '../components/vtt/VttTokenModal';
+import { VttWeatherPopover } from '../components/vtt/VttWeatherPopover';
+import { stopWeatherAudio } from '../lib/vttWeatherAudio';
 import { useVttStore } from '../store/useVttStore';
 import {
   VTT_SURFACE_PRESETS,
@@ -143,6 +145,13 @@ export const VttScreen: React.FC = () => {
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [isMapPopoverOpen, isSceneMenuOpen]);
+
+  // Silence procedural weather audio smoothly when leaving the VTT screen
+  useEffect(() => {
+    return () => {
+      stopWeatherAudio();
+    };
+  }, []);
 
   // Tactical keyboard shortcuts (V, R, H, 0, Arrow keys, Ctrl+Z, Delete/Backspace)
   useEffect(() => {
@@ -702,6 +711,9 @@ export const VttScreen: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* GM Weather, Particles & Ambient Audio Controls */}
+          <VttWeatherPopover scene={activeScene} />
         </div>
 
         {/* Right: Importers, +Token, Combat Drawer Toggle */}

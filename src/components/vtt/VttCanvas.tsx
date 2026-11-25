@@ -14,6 +14,7 @@ import {
   type VttScene,
   type VttToken,
 } from '../../types/vtt';
+import { VttWeatherOverlay } from './VttWeatherOverlay';
 
 interface VttCanvasProps {
   scene: VttScene;
@@ -234,6 +235,12 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
 
   // Start pan, pinch, or ruler on arena background
   const handleArenaPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Never steal pointer capture from UI overlays or buttons rendered above the arena
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest('button, input, select, textarea, a, [data-vtt-ui="true"]')) {
+      return;
+    }
+
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     // Two-finger pinch-to-zoom on touch devices
@@ -877,13 +884,20 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
         )}
       </div>
 
+      {/* Atmospheric & Weather Canvas 2D Layer (pointer-events-none, never blocks clicks) */}
+      <VttWeatherOverlay weather={scene.weather} />
+
       {/* Helpful Zero-State Onboarding Card when Scene has No Tokens */}
       {scene.tokens.length === 0 && (
         <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none p-4"
+          className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none p-4"
           data-dice3d-ignore="true"
         >
-          <div className="pointer-events-auto max-w-md w-full rounded-2xl bg-slate-950/92 border border-white/12 p-5 text-center space-y-4 shadow-2xl">
+          <div
+            data-vtt-ui="true"
+            onPointerDown={(e) => e.stopPropagation()}
+            className="pointer-events-auto max-w-md w-full rounded-2xl bg-slate-950/92 border border-white/12 p-5 text-center space-y-4 shadow-2xl"
+          >
             <div className="w-11 h-11 rounded-xl bg-cyan-500/15 border border-cyan-400/35 text-cyan-300 flex items-center justify-center mx-auto">
               <Swords className="w-5 h-5" />
             </div>
