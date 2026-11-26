@@ -30,6 +30,7 @@ import { VttCombatSidebar } from '../components/vtt/VttCombatSidebar';
 import { VttImportModal } from '../components/vtt/VttImportModal';
 import { VttTokenModal } from '../components/vtt/VttTokenModal';
 import { VttWeatherPopover } from '../components/vtt/VttWeatherPopover';
+import { isGmOrAdmin, useAuthSession } from '../lib/authSession';
 import { stopWeatherAudio } from '../lib/vttWeatherAudio';
 import { useVttStore } from '../store/useVttStore';
 import {
@@ -107,6 +108,9 @@ export const VttScreen: React.FC = () => {
     undo,
     requestCameraFocus,
   } = useVttStore();
+
+  const { user: currentUser } = useAuthSession();
+  const canUseGmModules = isGmOrAdmin(currentUser);
 
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
@@ -718,25 +722,29 @@ export const VttScreen: React.FC = () => {
 
         {/* Right: Importers, +Token, Combat Drawer Toggle */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setImportModal({ open: true, tab: 'characters' })}
-            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
-            title="Importar Fichas de Personagem do Mapa de Notas"
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Fichas</span>
-          </button>
+          {canUseGmModules && (
+            <>
+              <button
+                type="button"
+                onClick={() => setImportModal({ open: true, tab: 'characters' })}
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                title="Importar Fichas de Personagem do Mapa de Notas"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Fichas</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setImportModal({ open: true, tab: 'encounter' })}
-            className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
-            title="Importar ou gerar Encontro da Forja de Mundos"
-          >
-            <Compass className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Encontro</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setImportModal({ open: true, tab: 'encounter' })}
+                className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                title="Importar ou gerar Encontro da Forja de Mundos"
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Encontro</span>
+              </button>
+            </>
+          )}
 
           <button
             type="button"
@@ -908,9 +916,14 @@ export const VttScreen: React.FC = () => {
         {/* Center 2D Tactical Arena */}
         <VttCanvas
           scene={activeScene}
+          canImportFromGmModules={canUseGmModules}
           onOpenNewToken={() => setIsNewTokenOpen(true)}
-          onOpenImportCharacters={() => setImportModal({ open: true, tab: 'characters' })}
-          onOpenImportEncounter={() => setImportModal({ open: true, tab: 'encounter' })}
+          onOpenImportCharacters={() => {
+            if (canUseGmModules) setImportModal({ open: true, tab: 'characters' });
+          }}
+          onOpenImportEncounter={() => {
+            if (canUseGmModules) setImportModal({ open: true, tab: 'encounter' });
+          }}
         />
 
         {/* Right Combat & Token Inspector Sidebar (Desktop) */}
@@ -942,11 +955,13 @@ export const VttScreen: React.FC = () => {
 
       {/* Modals */}
       <VttTokenModal isOpen={isNewTokenOpen} onClose={() => setIsNewTokenOpen(false)} />
-      <VttImportModal
-        isOpen={importModal.open}
-        initialTab={importModal.tab}
-        onClose={() => setImportModal((prev) => ({ ...prev, open: false }))}
-      />
+      {canUseGmModules && (
+        <VttImportModal
+          isOpen={importModal.open}
+          initialTab={importModal.tab}
+          onClose={() => setImportModal((prev) => ({ ...prev, open: false }))}
+        />
+      )}
     </div>
   );
 };

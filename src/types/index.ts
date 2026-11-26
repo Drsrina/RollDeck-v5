@@ -149,6 +149,26 @@ export interface CharacterSheetData {
   avatarUrl?: string;
 }
 
+export type PlayerSheetKind = 'character' | 'sidekick';
+
+export type SidekickRole = 'warrior' | 'expert' | 'spellcaster' | 'companion';
+
+export interface PlayerSheet {
+  id: string;
+  kind: PlayerSheetKind;
+  name: string;
+  sidekickRole?: SidekickRole;
+  masterCharacterId?: string;
+  masterCharacterName?: string;
+  notes: string;
+  sheet: CharacterSheetData;
+  ownerUserId: string;
+  ownerUsername: string;
+  ownerDisplayName: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface NoteNode {
   id: string;
   title: string;
@@ -157,6 +177,10 @@ export interface NoteNode {
   layerId: string;
   category?: NoteCategory;
   characterSheet?: CharacterSheetData;
+  sourcePlayerSheetId?: string;
+  sheetKind?: PlayerSheetKind;
+  ownerUsername?: string;
+  ownerDisplayName?: string;
   color?: string;
   x: number;
   y: number;

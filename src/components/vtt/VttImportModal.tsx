@@ -23,6 +23,7 @@ import {
   type EncontroGerado,
   type SistemaEncontro,
 } from '../../lib/forja/encounterGenerator';
+import { isGmOrAdmin, useAuthSession } from '../../lib/authSession';
 import { useAppStore } from '../../store/useAppStore';
 import { useMapStore } from '../../store/useMapStore';
 import { useVttStore } from '../../store/useVttStore';
@@ -96,7 +97,10 @@ export const VttImportModal: React.FC<VttImportModalProps> = ({
     });
   }, [seed, nivelGrupo, dificuldade, bioma, sistema]);
 
-  if (!isOpen) return null;
+  const { user: currentUser } = useAuthSession();
+  const canUseGmModules = isGmOrAdmin(currentUser);
+
+  if (!isOpen || !canUseGmModules) return null;
 
   const toggleNote = (id: string) => {
     setSelectedNoteIds((prev) =>

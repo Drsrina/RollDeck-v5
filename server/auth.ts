@@ -433,13 +433,20 @@ export function createAuthMiddleware(store: LocalApiStore) {
     return next();
   };
 
-  const requireApiAuth = (requiredScope: ApiKeyScope) => {
+  const requireApiAuth = (requiredScope: ApiKeyScope, options?: { gmOnly?: boolean }) => {
     return async (req: Request, res: Response, next: NextFunction) => {
       const { sessionToken, apiKey } = extractCredentials(req);
 
       if (sessionToken) {
         const user = await verifyUserSession(store, sessionToken);
         if (user) {
+          if (options?.gmOnly && user.role !== 'admin' && user.role !== 'gm') {
+            return res.status(403).json({
+              error: 'forbidden',
+              message: 'Acesso restrito a Mestres (GM) e Administradores.',
+            });
+          }
+
           if (!user.scopes.includes(requiredScope)) {
             return res.status(403).json({
               error: 'forbidden',

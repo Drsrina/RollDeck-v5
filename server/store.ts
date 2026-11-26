@@ -13,6 +13,7 @@ import type {
   NoteLink,
   NoteNode,
   Package,
+  PlayerSheet,
   RollResult,
 } from '../src/types';
 import { DEFAULT_CUSTOM_DICE } from '../src/lib/roll';
@@ -25,7 +26,7 @@ export type UserRole = 'admin' | 'gm' | 'player' | 'viewer';
 export const ROLE_SCOPES: Record<UserRole, ApiKeyScope[]> = {
   admin: ['read', 'write', 'roll', 'generate'],
   gm: ['read', 'write', 'roll', 'generate'],
-  player: ['read', 'roll', 'generate'],
+  player: ['read', 'roll'],
   viewer: ['read'],
 };
 
@@ -95,6 +96,7 @@ export interface ApiCollections {
   history: RollResult[];
   lootGenerators: LootGenerator[];
   lootGroups: LootGroup[];
+  playerSheets: PlayerSheet[];
   settings: AppSettings;
   viewState: MapViewState;
 }
@@ -119,7 +121,8 @@ export type CollectionName =
   | 'categories'
   | 'history'
   | 'lootGenerators'
-  | 'lootGroups';
+  | 'lootGroups'
+  | 'playerSheets';
 
 const DEFAULT_API_CATEGORIES: Category[] = [
   { id: 'combat', name: 'Combate', icon: '⚔️', color: '#f43f5e' },
@@ -204,6 +207,7 @@ export function createDefaultStoreDocument(): ApiStoreDocument {
       history: [],
       lootGenerators: structuredClone(DEFAULT_LOOT_GENERATOR_TEMPLATES),
       lootGroups: [],
+      playerSheets: [],
       settings: { ...DEFAULT_API_SETTINGS },
       viewState: { ...DEFAULT_API_VIEW_STATE },
     },
@@ -236,6 +240,9 @@ export class LocalApiStore {
         collections: {
           ...defaults.collections,
           ...(parsed.collections ?? {}),
+          playerSheets: Array.isArray(parsed.collections?.playerSheets)
+            ? parsed.collections.playerSheets
+            : [],
           settings: { ...defaults.collections.settings, ...(parsed.collections?.settings ?? {}) },
           viewState: { ...defaults.collections.viewState, ...(parsed.collections?.viewState ?? {}) },
         },

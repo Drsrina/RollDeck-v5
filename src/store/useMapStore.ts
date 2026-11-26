@@ -41,6 +41,7 @@ import type {
   NoteLayer,
   NoteLink,
   NoteNode,
+  PlayerSheetKind,
 } from '../types';
 
 interface MapHistorySnapshot {
@@ -66,6 +67,7 @@ interface MapStoreState {
   editingNoteId: string | null;
   isLayersPanelOpen: boolean;
   isListPanelOpen: boolean;
+  isPlayerSheetsExplorerOpen: boolean;
 
   // Radial / Action Menu for node
   radialNodeId: string | null;
@@ -94,6 +96,7 @@ interface MapStoreState {
   closeEditor: () => void;
   setLayersPanelOpen: (open: boolean) => void;
   setListPanelOpen: (open: boolean) => void;
+  setPlayerSheetsExplorerOpen: (open: boolean) => void;
   setRadialMenu: (nodeId: string | null, pos?: { x: number; y: number } | null) => void;
 
   // CRUD Notes
@@ -107,6 +110,11 @@ interface MapStoreState {
       category?: NoteCategory;
       characterSheet?: CharacterSheetData;
       openAfterCreate?: boolean;
+      tags?: string[];
+      sourcePlayerSheetId?: string;
+      sheetKind?: PlayerSheetKind;
+      ownerUsername?: string;
+      ownerDisplayName?: string;
     }
   ) => Promise<NoteNode>;
   saveNoteData: (note: NoteNode) => Promise<void>;
@@ -253,6 +261,7 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   editingNoteId: null,
   isLayersPanelOpen: false,
   isListPanelOpen: false,
+  isPlayerSheetsExplorerOpen: false,
 
   radialNodeId: null,
   radialPosition: null,
@@ -325,6 +334,8 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setLayersPanelOpen: (open) => set({ isLayersPanelOpen: open }),
 
   setListPanelOpen: (open) => set({ isListPanelOpen: open }),
+
+  setPlayerSheetsExplorerOpen: (open) => set({ isPlayerSheetsExplorerOpen: open }),
 
   setRadialMenu: (nodeId, pos = null) => set({ radialNodeId: nodeId, radialPosition: pos }),
 
@@ -419,11 +430,15 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
       id: `note-${crypto.randomUUID()}`,
       title: category === 'character' && title === 'Nova Nota' ? 'Novo Personagem' : title,
       body,
-      tags: category === 'character' ? ['ficha', 'personagem'] : [],
+      tags: options?.tags ?? (category === 'character' ? ['ficha', 'personagem'] : []),
       category,
       ...(category === 'character'
         ? { characterSheet: options?.characterSheet || createDefaultCharacterSheet() }
         : {}),
+      ...(options?.sourcePlayerSheetId ? { sourcePlayerSheetId: options.sourcePlayerSheetId } : {}),
+      ...(options?.sheetKind ? { sheetKind: options.sheetKind } : {}),
+      ...(options?.ownerUsername ? { ownerUsername: options.ownerUsername } : {}),
+      ...(options?.ownerDisplayName ? { ownerDisplayName: options.ownerDisplayName } : {}),
       layerId: preferredLayer,
       color: matchedLayer ? matchedLayer.color : '#22d3ee',
       x: Math.round(x),

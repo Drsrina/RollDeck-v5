@@ -1,15 +1,18 @@
-import { Castle, Compass, Dices, History, Map as MapIcon, PackageCheck, Settings, Sparkles, Swords, LucideIcon } from 'lucide-react';
+import { Castle, Compass, Dices, History, IdCard, Map as MapIcon, PackageCheck, Settings, Sparkles, Swords, LucideIcon } from 'lucide-react';
 import React from 'react';
+import { canAccessTab, useAuthSession } from '../../lib/authSession';
 import { triggerHaptic } from '../../lib/haptics';
 import { type ActiveTab, useAppStore } from '../../store/useAppStore';
 
 export const BottomNav: React.FC = () => {
   const { activeTab, setActiveTab, settings, tray } = useAppStore();
+  const { user: currentUser } = useAuthSession();
 
   const totalDiceInTray = tray.reduce((acc, t) => acc + t.count, 0);
 
-  const tabs: { id: ActiveTab; label: string; icon: LucideIcon; badge?: number }[] = [
+  const allTabs: { id: ActiveTab; label: string; icon: LucideIcon; badge?: number }[] = [
     { id: 'roll', label: 'Rolar', icon: Dices, badge: totalDiceInTray > 0 ? totalDiceInTray : undefined },
+    { id: 'sheets', label: 'Fichas', icon: IdCard },
     { id: 'oraculo', label: 'Oráculo', icon: Castle },
     { id: 'forja', label: 'Forja', icon: Compass },
     { id: 'map', label: 'Mapa', icon: MapIcon },
@@ -19,6 +22,8 @@ export const BottomNav: React.FC = () => {
     { id: 'history', label: 'Histórico', icon: History },
     { id: 'settings', label: 'Ajustes', icon: Settings },
   ];
+
+  const tabs = allTabs.filter((tab) => canAccessTab(currentUser, tab.id));
 
   const handleSelectTab = (tab: ActiveTab) => {
     triggerHaptic('tap', settings.hapticsEnabled);

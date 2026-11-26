@@ -79,6 +79,10 @@ export const NoteSchema = z.object({
   layerId: safeIdSchema.default('layer-locations'),
   category: NoteCategorySchema.optional().default('general'),
   characterSheet: z.any().optional(),
+  sourcePlayerSheetId: safeIdSchema.optional(),
+  sheetKind: z.enum(['character', 'sidekick']).optional(),
+  ownerUsername: z.string().trim().max(64).optional(),
+  ownerDisplayName: z.string().trim().max(80).optional(),
   color: safeColorSchema.optional(),
   x: z.number().finite().default(0),
   y: z.number().finite().default(0),
@@ -356,9 +360,91 @@ export const SnapshotSyncSchema = z.object({
     history: z.array(z.any()).max(2000).optional(),
     lootGenerators: z.array(z.any()).max(500).optional(),
     lootGroups: z.array(z.any()).max(1000).optional(),
+    playerSheets: z.array(z.any()).max(1000).optional(),
     settings: z.any().optional(),
     viewState: z.any().optional(),
   }),
+});
+
+const SAFE_DATA_IMAGE_REGEX = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i;
+
+export const SafeAvatarUrlSchema = z
+  .string()
+  .max(1_500_000, 'Imagem de retrato excede o tamanho máximo permitido (1.5MB).')
+  .refine(
+    (val) => {
+      const trimmed = val.trim();
+      if (!trimmed) return true;
+      if (SAFE_DATA_IMAGE_REGEX.test(trimmed)) return true;
+      try {
+        const parsed = new URL(trimmed);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      } catch {
+        return false;
+      }
+    },
+    {
+      message: 'URL de avatar inválida. Use imagem PNG/JPEG/WebP/GIF ou endereço http(s).',
+    }
+  );
+
+const CharacterAttributeKeySchema = z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']);
+
+export const CharacterSheetAttackSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  name: z.string().trim().max(120),
+  bonus: z.number().int().min(-50).max(50),
+  damage: z.string().trim().max(60),
+});
+
+export const CharacterSheetDataSchema = z.object({
+  playerName: z.string().trim().max(80).optional(),
+  race: z.string().trim().max(80).default(''),
+  characterClass: z.string().trim().max(80).default(''),
+  level: z.number().int().min(1).max(100).default(1),
+  alignment: z.string().trim().max(80).optional(),
+  background: z.string().trim().max(120).optional(),
+  hpCurrent: z.number().int().min(0).max(99999).default(12),
+  hpMax: z.number().int().min(1).max(99999).default(12),
+  hpTemp: z.number().int().min(0).max(99999).default(0),
+  ac: z.number().int().min(0).max(200).default(12),
+  initiative: z.number().int().min(-50).max(50).default(0),
+  speed: z.string().trim().max(40).default('9m'),
+  proficiencyBonus: z.number().int().min(0).max(30).default(2),
+  passivePerception: z.number().int().min(0).max(100).optional(),
+  attributes: z.object({
+    str: z.number().int().min(1).max(50).default(10),
+    dex: z.number().int().min(1).max(50).default(10),
+    con: z.number().int().min(1).max(50).default(10),
+    int: z.number().int().min(1).max(50).default(10),
+    wis: z.number().int().min(1).max(50).default(10),
+    cha: z.number().int().min(1).max(50).default(10),
+  }),
+  savingThrowProficiencies: z.array(CharacterAttributeKeySchema).max(6).default([]),
+  skills: z.array(z.string().trim().max(80)).max(50).default([]),
+  attacks: z.array(CharacterSheetAttackSchema).max(30).default([]),
+  conditions: z.array(z.string().trim().max(60)).max(30).default([]),
+  inventory: z.string().max(20000).default(''),
+  spellsAndFeatures: z.string().max(20000).default(''),
+  avatarUrl: SafeAvatarUrlSchema.optional(),
+});
+
+export const PlayerSheetCreateSchema = z.object({
+  kind: z.enum(['character', 'sidekick']).default('character'),
+  name: z.string().trim().min(1, 'Nome da ficha é obrigatório.').max(120),
+  sidekickRole: z.enum(['warrior', 'expert', 'spellcaster', 'companion']).optional(),
+  masterCharacterId: safeIdSchema.optional().nullable(),
+  notes: z.string().max(30000).default(''),
+  sheet: CharacterSheetDataSchema,
+});
+
+export const PlayerSheetPatchSchema = z.object({
+  kind: z.enum(['character', 'sidekick']).optional(),
+  name: z.string().trim().min(1).max(120).optional(),
+  sidekickRole: z.enum(['warrior', 'expert', 'spellcaster', 'companion']).optional().nullable(),
+  masterCharacterId: safeIdSchema.optional().nullable(),
+  notes: z.string().max(30000).optional(),
+  sheet: CharacterSheetDataSchema.optional(),
 });
 
 export const ObsidianImportRequestSchema = z.object({

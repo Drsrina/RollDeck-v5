@@ -18,6 +18,7 @@ import {
   Square,
   Trash2,
   Undo2,
+  Users,
   X,
   ZoomIn,
   ZoomOut,
@@ -61,6 +62,7 @@ export const MapCanvas: React.FC = () => {
     setRadialMenu,
     setLayersPanelOpen,
     setListPanelOpen,
+    setPlayerSheetsExplorerOpen,
     runForceLayout,
     addLink,
     pushHistorySnapshot,
@@ -74,6 +76,7 @@ export const MapCanvas: React.FC = () => {
     isEditorOpen,
     isLayersPanelOpen,
     isListPanelOpen,
+    isPlayerSheetsExplorerOpen,
     radialNodeId,
     canvasTool,
     setCanvasTool,
@@ -224,6 +227,7 @@ export const MapCanvas: React.FC = () => {
         isEditorOpen ||
         isLayersPanelOpen ||
         isListPanelOpen ||
+        isPlayerSheetsExplorerOpen ||
         isBackgroundModalOpen ||
         editingLink ||
         radialNodeId
@@ -304,6 +308,7 @@ export const MapCanvas: React.FC = () => {
     isEditorOpen,
     isLayersPanelOpen,
     isListPanelOpen,
+    isPlayerSheetsExplorerOpen,
     radialNodeId,
     redo,
     selectDrawing,
@@ -1556,6 +1561,20 @@ export const MapCanvas: React.FC = () => {
             title="Lista e Busca"
           >
             <List className="w-5 h-5" />
+          </button>
+
+          {/* Explore Player-Created Sheets Button (GM & Admin) */}
+          <button
+            type="button"
+            onClick={() => setPlayerSheetsExplorerOpen(true)}
+            aria-label="Explorar fichas criadas pelos jogadores"
+            title="Fichas dos Jogadores (Explorar e Adicionar ao Mapa)"
+            className="h-11 px-3 rounded-2xl glass-panel-elevated text-emerald-300 border border-emerald-400/45 flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition hover:bg-emerald-500/15 cursor-pointer"
+          >
+            <Users className="w-4 h-4 shrink-0" />
+            <span className="hidden md:inline text-xs font-semibold whitespace-nowrap">
+              Fichas dos Jogadores
+            </span>
           </button>
 
           {/* Quick Create Character Sheet Button */}

@@ -5,6 +5,7 @@ import {
   Compass,
   Dices,
   History,
+  IdCard,
   Keyboard,
   LogOut,
   Map as MapIcon,
@@ -23,7 +24,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { isPersistenceGranted } from '../../db/indexedDB';
-import { clearAuthSession, ROLE_META, useAuthSession } from '../../lib/authSession';
+import { canAccessTab, clearAuthSession, ROLE_META, useAuthSession } from '../../lib/authSession';
 import { triggerHaptic } from '../../lib/haptics';
 import { playDiceRollSound } from '../../lib/audio';
 import { type ActiveTab, useAppStore } from '../../store/useAppStore';
@@ -61,29 +62,35 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
 
   const totalDiceInTray = tray.reduce((acc, t) => acc + t.count, 0);
 
-  const tabs: {
+  const allTabs: {
     id: ActiveTab;
     label: string;
-    shortcut: string;
     icon: LucideIcon;
     badge?: number;
   }[] = [
     {
       id: 'roll',
       label: 'Mesa de Rolagem',
-      shortcut: '1',
       icon: Dices,
       badge: totalDiceInTray > 0 ? totalDiceInTray : undefined,
     },
-    { id: 'packages', label: 'Pacotes Pré-config', shortcut: '2', icon: PackageCheck },
-    { id: 'map', label: 'Mapa de Notas', shortcut: '3', icon: MapIcon },
-    { id: 'vtt', label: 'Tabuleiro VTT', shortcut: '4', icon: Swords },
-    { id: 'loot', label: 'Geradores de Loot', shortcut: '5', icon: Sparkles },
-    { id: 'forja', label: 'Forja de Mundos', shortcut: '6', icon: Compass },
-    { id: 'oraculo', label: 'Oráculo da Cidade', shortcut: '7', icon: Castle },
-    { id: 'history', label: 'Histórico & Logs', shortcut: '8', icon: History },
-    { id: 'settings', label: 'Ajustes & Dados', shortcut: '9', icon: Settings },
+    { id: 'sheets', label: 'Minhas Fichas', icon: IdCard },
+    { id: 'packages', label: 'Pacotes Pré-config', icon: PackageCheck },
+    { id: 'map', label: 'Mapa de Notas', icon: MapIcon },
+    { id: 'vtt', label: 'Tabuleiro VTT', icon: Swords },
+    { id: 'loot', label: 'Geradores de Loot', icon: Sparkles },
+    { id: 'forja', label: 'Forja de Mundos', icon: Compass },
+    { id: 'oraculo', label: 'Oráculo da Cidade', icon: Castle },
+    { id: 'history', label: 'Histórico & Logs', icon: History },
+    { id: 'settings', label: 'Ajustes & Dados', icon: Settings },
   ];
+
+  const tabs = allTabs
+    .filter((tab) => canAccessTab(currentUser, tab.id))
+    .map((tab, index) => ({
+      ...tab,
+      shortcut: String(index + 1),
+    }));
 
   const handleSelectTab = (tab: ActiveTab) => {
     triggerHaptic('tap', settings.hapticsEnabled);
@@ -371,7 +378,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
             <div className="text-[11px] leading-tight space-y-0.5">
               <p className="font-medium text-slate-300">Atalhos:</p>
               <p className="text-[10px] text-slate-400">
-                <span style={{ color: 'var(--theme-primary, #22d3ee)' }}>1-9</span> troca de aba •{' '}
+                <span style={{ color: 'var(--theme-primary, #22d3ee)' }}>1-{tabs.length}</span> troca de aba •{' '}
                 <span style={{ color: 'var(--theme-primary, #22d3ee)' }}>Espaço</span> rola dados
               </p>
             </div>

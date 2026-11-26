@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { DiceRollAnimation } from './components/dice/DiceRollAnimation';
 import { FloatingDice3DOverlay } from './components/dice/FloatingDice3DOverlay';
 import { RollResultsModal } from './components/dice/RollResultsModal';
@@ -10,6 +10,7 @@ import { HistoryScreen } from './screens/HistoryScreen';
 import { LootScreen } from './screens/LootScreen';
 import { MapScreen } from './screens/MapScreen';
 import { PackagesScreen } from './screens/PackagesScreen';
+import { PlayerSheetsScreen } from './screens/PlayerSheetsScreen';
 import { RollScreen } from './screens/RollScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ForjaScreen } from './screens/ForjaScreen';
@@ -18,24 +19,27 @@ import { VttScreen } from './screens/VttScreen';
 import { DisclaimerTokenModal } from './components/auth/DisclaimerTokenModal';
 import { FloatingWindowsHost } from './components/map/FloatingWindowsHost';
 import {
+  canAccessTab,
   clearAuthSession,
   getSessionToken,
+  isGmOrAdmin,
   setAuthSession,
   useAuthSession,
 } from './lib/authSession';
 import { type ActiveTab, useAppStore } from './store/useAppStore';
 
-const TAB_SHORTCUT_MAP: Record<string, ActiveTab> = {
-  '1': 'roll',
-  '2': 'packages',
-  '3': 'map',
-  '4': 'vtt',
-  '5': 'loot',
-  '6': 'forja',
-  '7': 'oraculo',
-  '8': 'history',
-  '9': 'settings',
-};
+const ORDERED_TABS: readonly ActiveTab[] = [
+  'roll',
+  'sheets',
+  'packages',
+  'map',
+  'vtt',
+  'loot',
+  'forja',
+  'oraculo',
+  'history',
+  'settings',
+];
 
 export default function App() {
   const { token: sessionToken, user: currentUser } = useAuthSession();
@@ -95,6 +99,22 @@ export default function App() {
       });
   }, []);
 
+  const tabShortcutMap = useMemo(() => {
+    const allowed = ORDERED_TABS.filter((tab) => canAccessTab(currentUser, tab));
+    const map: Record<string, ActiveTab> = {};
+    allowed.forEach((tab, idx) => {
+      map[String(idx + 1)] = tab;
+    });
+    return map;
+  }, [currentUser]);
+
+  // Redireciona automaticamente se o usuário logado não tiver permissão para a aba ativa
+  useEffect(() => {
+    if (currentUser && !canAccessTab(currentUser, activeTab)) {
+      setActiveTab('roll');
+    }
+  }, [currentUser, activeTab, setActiveTab]);
+
   // Global desktop keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -110,10 +130,10 @@ export default function App() {
         return;
       }
 
-      // Tab shortcuts 1-6
-      if (TAB_SHORTCUT_MAP[e.key]) {
+      // Tab shortcuts (dinâmicos conforme as abas permitidas ao papel do usuário)
+      if (tabShortcutMap[e.key]) {
         e.preventDefault();
-        setActiveTab(TAB_SHORTCUT_MAP[e.key]);
+        setActiveTab(tabShortcutMap[e.key]);
         return;
       }
 
@@ -138,6 +158,7 @@ export default function App() {
   }, [
     activeTab,
     setActiveTab,
+    tabShortcutMap,
     tray,
     isRolling,
     rollTray,
@@ -204,23 +225,35 @@ export default function App() {
 
         {/* Main View Area */}
         <main className="flex-1 w-full flex flex-col overflow-hidden">
-          {activeTab === 'map' ? (
-            <MapScreen />
-          ) : activeTab === 'vtt' ? (
-            <VttScreen />
-          ) : (
-            <div className="flex-1 w-full overflow-y-auto">
-              <div className="w-full max-w-lg md:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-2 md:py-6">
-                {activeTab === 'roll' && <RollScreen />}
-                {activeTab === 'packages' && <PackagesScreen />}
-                {activeTab === 'loot' && <LootScreen />}
-                {activeTab === 'forja' && <ForjaScreen />}
-                {activeTab === 'oraculo' && <OraculoScreen />}
-                {activeTab === 'history' && <HistoryScreen />}
-                {activeTab === 'settings' && <SettingsScreen />}
+          {(() => {
+            const effectiveTab: ActiveTab =
+              currentUser && !canAccessTab(currentUser, activeTab) ? 'roll' : activeTab;
+
+            if (effectiveTab === 'map' && canAccessTab(currentUser, 'map')) {
+              return <MapScreen />;
+            }
+            if (effectiveTab === 'vtt') {
+              return <VttScreen />;
+            }
+            return (
+              <div className="flex-1 w-full overflow-y-auto">
+                <div className="w-full max-w-lg md:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-2 md:py-6">
+                  {effectiveTab === 'roll' && <RollScreen />}
+                  {effectiveTab === 'sheets' && canAccessTab(currentUser, 'sheets') && (
+                    <PlayerSheetsScreen />
+                  )}
+                  {effectiveTab === 'packages' && <PackagesScreen />}
+                  {effectiveTab === 'loot' && canAccessTab(currentUser, 'loot') && <LootScreen />}
+                  {effectiveTab === 'forja' && canAccessTab(currentUser, 'forja') && <ForjaScreen />}
+                  {effectiveTab === 'oraculo' && canAccessTab(currentUser, 'oraculo') && (
+                    <OraculoScreen />
+                  )}
+                  {effectiveTab === 'history' && <HistoryScreen />}
+                  {effectiveTab === 'settings' && <SettingsScreen />}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </main>
 
         {/* Mobile Bottom Thumb Navigation Bar (hidden on md+) */}
@@ -246,8 +279,8 @@ export default function App() {
         }}
       />
 
-      {/* Janelas Flutuantes Globais Persistentes através da navegação */}
-      {isAuthenticated && <FloatingWindowsHost />}
+      {/* Janelas Flutuantes Globais Persistentes através da navegação (somente Mestre/Admin) */}
+      {isAuthenticated && isGmOrAdmin(currentUser) && <FloatingWindowsHost />}
 
       {/* Dados 3D Interativos Persistentes em todas as abas (ligável/desligável na Mesa de Rolagem) */}
       {isAuthenticated && settings.dice3DEnabled !== false && <FloatingDice3DOverlay />}

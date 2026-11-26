@@ -1,4 +1,39 @@
-import type { CharacterAttributeKey, CharacterSheetData } from '../types';
+import type { CharacterAttributeKey, CharacterSheetData, SidekickRole } from '../types';
+
+export const SIDEKICK_ROLE_META: Record<
+  SidekickRole,
+  {
+    label: string;
+    subtitle: string;
+    defaultClass: string;
+    defaultRace: string;
+  }
+> = {
+  warrior: {
+    label: 'Combatente',
+    subtitle: 'Guarda-costas, escudeiro ou soldado de linha de frente',
+    defaultClass: 'Sidekick Combatente',
+    defaultRace: 'Humano',
+  },
+  expert: {
+    label: 'Especialista',
+    subtitle: 'Batedor, ladino ágil ou ajudante tático de perícias',
+    defaultClass: 'Sidekick Especialista',
+    defaultRace: 'Halfling',
+  },
+  spellcaster: {
+    label: 'Conjurador',
+    subtitle: 'Acólito, aprendiz arcano ou curandeiro de apoio',
+    defaultClass: 'Sidekick Conjurador',
+    defaultRace: 'Elfo',
+  },
+  companion: {
+    label: 'Companheiro',
+    subtitle: 'Fera leal, montaria treinada ou familiar místico',
+    defaultClass: 'Companheiro Fiel',
+    defaultRace: 'Fera / Criatura',
+  },
+};
 
 export const ATTRIBUTE_META: {
   key: CharacterAttributeKey;
@@ -168,3 +203,124 @@ export function characterSheetToMarkdown(title: string, sheet: CharacterSheetDat
 
   return lines.join('\n');
 }
+
+export function createDefaultSidekickSheet(
+  role: SidekickRole = 'warrior',
+  playerName?: string
+): CharacterSheetData {
+  const meta = SIDEKICK_ROLE_META[role];
+  if (role === 'warrior') {
+    return {
+      playerName: playerName || '',
+      race: meta.defaultRace,
+      characterClass: meta.defaultClass,
+      level: 1,
+      alignment: 'Leal e Bom',
+      background: 'Guarda-costas / Escudeiro',
+      hpCurrent: 16,
+      hpMax: 16,
+      hpTemp: 0,
+      ac: 15,
+      initiative: 1,
+      speed: '9m',
+      proficiencyBonus: 2,
+      passivePerception: 11,
+      attributes: { str: 15, dex: 12, con: 14, int: 9, wis: 11, cha: 10 },
+      savingThrowProficiencies: ['str', 'con'],
+      skills: ['Atletismo', 'Percepção'],
+      attacks: [
+        { id: `atk-${crypto.randomUUID()}`, name: 'Espada Curta', bonus: 4, damage: '1d6+2 perfurante' },
+        { id: `atk-${crypto.randomUUID()}`, name: 'Lança (Arremesso)', bonus: 4, damage: '1d6+2 perfurante' },
+      ],
+      conditions: [],
+      inventory: 'Cota de malha leve, escudo de madeira, espada curta, rações (3 dias).',
+      spellsAndFeatures: 'Papel Marcial (Defensor): impõe desvantagem com reação em ataques contra um aliado adjacente.\nRetomar Fôlego (1/descanso curto): recupera 1d10 + nível PV.',
+    };
+  }
+
+  if (role === 'expert') {
+    return {
+      playerName: playerName || '',
+      race: meta.defaultRace,
+      characterClass: meta.defaultClass,
+      level: 1,
+      alignment: 'Neutro e Bom',
+      background: 'Batedor / Mensageiro',
+      hpCurrent: 12,
+      hpMax: 12,
+      hpTemp: 0,
+      ac: 14,
+      initiative: 3,
+      speed: '9m',
+      proficiencyBonus: 2,
+      passivePerception: 13,
+      attributes: { str: 10, dex: 16, con: 12, int: 13, wis: 12, cha: 12 },
+      savingThrowProficiencies: ['dex', 'int'],
+      skills: ['Furtividade', 'Percepção', 'Investigação', 'Acrobacia'],
+      attacks: [
+        { id: `atk-${crypto.randomUUID()}`, name: 'Adaga', bonus: 5, damage: '1d4+3 perfurante' },
+        { id: `atk-${crypto.randomUUID()}`, name: 'Arco Curto', bonus: 5, damage: '1d6+3 perfurante' },
+      ],
+      conditions: [],
+      inventory: 'Armadura de couro, ferramentas de ladrão, 2 adagas, arco curto e 20 flechas.',
+      spellsAndFeatures: 'Prestativo: pode usar a ação Ajudar como ação bônus para conceder vantagem a um aliado.\nEspecialista em Perícias: bônus dobrado em Furtividade e Percepção.',
+    };
+  }
+
+  if (role === 'spellcaster') {
+    return {
+      playerName: playerName || '',
+      race: meta.defaultRace,
+      characterClass: meta.defaultClass,
+      level: 1,
+      alignment: 'Neutro e Bom',
+      background: 'Acólito / Aprendiz',
+      hpCurrent: 10,
+      hpMax: 10,
+      hpTemp: 0,
+      ac: 12,
+      initiative: 1,
+      speed: '9m',
+      proficiencyBonus: 2,
+      passivePerception: 13,
+      attributes: { str: 8, dex: 12, con: 12, int: 14, wis: 15, cha: 11 },
+      savingThrowProficiencies: ['wis', 'int'],
+      skills: ['Arcanismo', 'Medicina', 'Religião'],
+      attacks: [
+        { id: `atk-${crypto.randomUUID()}`, name: 'Raio de Fogo', bonus: 4, damage: '1d10 ígneo' },
+        { id: `atk-${crypto.randomUUID()}`, name: 'Cajado', bonus: 1, damage: '1d6-1 concussão' },
+      ],
+      conditions: [],
+      inventory: 'Foco arcano/símbolo sagrado, cajado, grimório de anotações, bolsa de componentes.',
+      spellsAndFeatures: 'Truques: Raio de Fogo, Orientação, Luz.\n1º Círculo (2 espaços): Curar Ferimentos (1d8+2), Bênção, Escudo Arcano.',
+    };
+  }
+
+  // companion
+  return {
+    playerName: playerName || '',
+    race: meta.defaultRace,
+    characterClass: meta.defaultClass,
+    level: 1,
+    alignment: 'Neutro',
+    background: 'Companheiro Leal',
+    hpCurrent: 13,
+    hpMax: 13,
+    hpTemp: 0,
+    ac: 13,
+    initiative: 2,
+    speed: '12m',
+    proficiencyBonus: 2,
+    passivePerception: 14,
+    attributes: { str: 13, dex: 15, con: 13, int: 4, wis: 14, cha: 8 },
+    savingThrowProficiencies: ['dex', 'wis'],
+    skills: ['Percepção', 'Furtividade', 'Sobrevivência'],
+    attacks: [
+      { id: `atk-${crypto.randomUUID()}`, name: 'Mordida / Investida', bonus: 4, damage: '1d6+2 perfurante' },
+    ],
+    conditions: [],
+    inventory: 'Coleira reforçada, alforje leve.',
+    spellsAndFeatures: 'Sentidos Aguçados: vantagem em testes de Percepção baseados em audição ou olfato.\nTática de Matilha: vantagem no ataque se um aliado estiver adjacente ao alvo.',
+  };
+}
+

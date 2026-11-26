@@ -37,6 +37,7 @@ import {
   BackupSchema,
 } from '../db/indexedDB';
 import { playDiceRollSound } from '../lib/audio';
+import { isGmOrAdmin, useAuthSession } from '../lib/authSession';
 import { triggerHaptic } from '../lib/haptics';
 import { applyTheme, getThemePreset, THEME_PRESETS, type ThemePreset } from '../lib/theme';
 import { useAppStore } from '../store/useAppStore';
@@ -54,6 +55,8 @@ export const SettingsScreen: React.FC = () => {
     refreshFromDB,
   } = useAppStore();
 
+  const { user: currentUser } = useAuthSession();
+  const canUseGmModules = isGmOrAdmin(currentUser);
   const [persisted, setPersisted] = useState(false);
   const [persistenceChecking, setPersistenceChecking] = useState(false);
   const [activeSubtab, setActiveSubtab] = useState<
@@ -820,13 +823,15 @@ export const SettingsScreen: React.FC = () => {
               </label>
             </div>
 
-            <button
-              onClick={handleExportMarkdownZip}
-              className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold active:scale-98 transition flex items-center justify-center gap-2 mt-2"
-            >
-              <Archive className="w-4 h-4 text-purple-400" />
-              <span>Exportar Notas em .ZIP (Obsidian Markdown)</span>
-            </button>
+            {canUseGmModules && (
+              <button
+                onClick={handleExportMarkdownZip}
+                className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold active:scale-98 transition flex items-center justify-center gap-2 mt-2"
+              >
+                <Archive className="w-4 h-4 text-purple-400" />
+                <span>Exportar Notas em .ZIP (Obsidian Markdown)</span>
+              </button>
+            )}
           </div>
 
           {/* Import Summary Modal / Box */}

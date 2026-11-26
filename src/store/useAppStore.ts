@@ -16,6 +16,7 @@ import {
   DEFAULT_SETTINGS,
 } from '../db/indexedDB';
 import { playCriticalFailSound, playCriticalSuccessSound, playDiceRollSound } from '../lib/audio';
+import { canAccessTab, getAuthUser } from '../lib/authSession';
 import { isSupported3DSides, type PolyhedralDieSides } from '../lib/dice3DGeometry';
 import { triggerHaptic } from '../lib/haptics';
 import { executeRoll, STANDARD_DICE } from '../lib/roll';
@@ -36,6 +37,7 @@ import type {
 
 export type ActiveTab =
   | 'roll'
+  | 'sheets'
   | 'packages'
   | 'map'
   | 'vtt'
@@ -165,7 +167,13 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   isInitialized: false,
   activeTab: 'roll',
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => {
+    const user = getAuthUser();
+    if (user && !canAccessTab(user, tab)) {
+      return;
+    }
+    set({ activeTab: tab });
+  },
 
   isSidebarCollapsed: false,
   toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),

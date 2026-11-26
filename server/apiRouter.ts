@@ -9,7 +9,7 @@ import { gerarAssentamento } from '../src/lib/forja/settlementGenerator';
 import { consultarOraculo } from '../src/lib/oraculoEngine';
 import { createMulberry32, stringToSeed } from '../src/lib/prng';
 import { executeRoll, STANDARD_DICE } from '../src/lib/roll';
-import type { DieDefinition, PackageDieGroup } from '../src/types';
+import type { DieDefinition, PackageDieGroup, PlayerSheet } from '../src/types';
 import {
   createAuthMiddleware,
   createExternalApiKey,
@@ -55,6 +55,8 @@ import {
   OracleRequestSchema,
   PackagePatchSchema,
   PackageSchema,
+  PlayerSheetCreateSchema,
+  PlayerSheetPatchSchema,
   RollRequestSchema,
   SettingsPatchSchema,
   SnapshotSyncSchema,
@@ -183,7 +185,7 @@ function getRequestBaseUrl(req: Request): string {
 
 export function createApiV1Router(store: LocalApiStore) {
   const router = express.Router();
-  const { requireAdmin, requireApiAuth } = createAuthMiddleware(store);
+  const { requireAuthenticatedUser, requireAdmin, requireApiAuth } = createAuthMiddleware(store);
 
   // ---------------- Discovery & OpenAPI ----------------
 
@@ -209,10 +211,12 @@ export function createApiV1Router(store: LocalApiStore) {
         history: state.collections.history.length,
         lootGenerators: state.collections.lootGenerators.length,
         lootGroups: state.collections.lootGroups.length,
+        playerSheets: state.collections.playerSheets.length,
       },
       endpoints: {
         users: '/api/v1/users',
         keys: '/api/v1/keys',
+        playerSheets: '/api/v1/player-sheets',
         snapshot: '/api/v1/snapshot',
         roll: '/api/v1/roll',
         oracle: '/api/v1/oracle',
@@ -462,14 +466,34 @@ export function createApiV1Router(store: LocalApiStore) {
 
   // ---------------- Local Snapshot Sync (Browser <-> Server API) ----------------
 
-  router.get('/snapshot', requireApiAuth('read'), async (_req, res) => {
+  router.get('/snapshot', requireApiAuth('read'), async (req, res) => {
     const state = await store.getState();
+    const isRestrictedUser =
+      req.auth?.kind === 'user' && req.auth.role !== 'admin' && req.auth.role !== 'gm';
+
+    const collections = isRestrictedUser
+      ? {
+          ...state.collections,
+          notes: [],
+          links: [],
+          layers: [],
+          frames: [],
+          drawings: [],
+          lootGenerators: [],
+          lootGroups: [],
+          playerSheets:
+            req.auth?.role === 'player' && req.auth.userId
+              ? state.collections.playerSheets.filter((s) => s.ownerUserId === req.auth?.userId)
+              : [],
+        }
+      : state.collections;
+
     res.json({
       app: 'RollDeck',
       schemaVersion: state.schemaVersion,
       exportedAt: new Date().toISOString(),
       updatedAt: state.updatedAt,
-      ...state.collections,
+      ...collections,
     });
   });
 
@@ -595,7 +619,7 @@ export function createApiV1Router(store: LocalApiStore) {
     return res.json(result);
   });
 
-  router.post('/oracle', requireApiAuth('generate'), (req, res) => {
+  router.post('/oracle', requireApiAuth('generate', { gmOnly: true }), (req, res) => {
     const parsed = OracleRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -614,7 +638,7 @@ export function createApiV1Router(store: LocalApiStore) {
     });
   });
 
-  router.post('/forja/world', requireApiAuth('generate'), (req, res) => {
+  router.post('/forja/world', requireApiAuth('generate', { gmOnly: true }), (req, res) => {
     const parsed = ForjaWorldRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -635,7 +659,7 @@ export function createApiV1Router(store: LocalApiStore) {
     });
   });
 
-  router.post('/forja/npcs', requireApiAuth('generate'), (req, res) => {
+  router.post('/forja/npcs', requireApiAuth('generate', { gmOnly: true }), (req, res) => {
     const parsed = ForjaBatchRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -644,7 +668,7 @@ export function createApiV1Router(store: LocalApiStore) {
     return res.json({ seed: seedNumber, count: items.length, items });
   });
 
-  router.post('/forja/items', requireApiAuth('generate'), (req, res) => {
+  router.post('/forja/items', requireApiAuth('generate', { gmOnly: true }), (req, res) => {
     const parsed = ForjaBatchRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -653,7 +677,7 @@ export function createApiV1Router(store: LocalApiStore) {
     return res.json({ seed: seedNumber, count: items.length, items });
   });
 
-  router.post('/forja/dungeon', requireApiAuth('generate'), (req, res) => {
+  router.post('/forja/dungeon', requireApiAuth('generate', { gmOnly: true }), (req, res) => {
     const parsed = ForjaDungeonRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -666,7 +690,7 @@ export function createApiV1Router(store: LocalApiStore) {
     return res.json({ seed: seedNumber, dungeon });
   });
 
-  router.post('/forja/settlement', requireApiAuth('generate'), (req, res) => {
+  router.post('/forja/settlement', requireApiAuth('generate', { gmOnly: true }), (req, res) => {
     const parsed = ForjaSettlementRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -684,7 +708,7 @@ export function createApiV1Router(store: LocalApiStore) {
 
   // ---------------- External Knowledge Integrations (Obsidian & Notion) ----------------
 
-  router.post('/integrations/obsidian/import', requireApiAuth('write'), async (req, res) => {
+  router.post('/integrations/obsidian/import', requireApiAuth('write', { gmOnly: true }), async (req, res) => {
     const parsed = ObsidianImportRequestSchema.safeParse(req.body || {});
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -725,14 +749,14 @@ export function createApiV1Router(store: LocalApiStore) {
     });
   });
 
-  router.get('/integrations/notion/status', requireApiAuth('read'), (_req, res) => {
+  router.get('/integrations/notion/status', requireApiAuth('read', { gmOnly: true }), (_req, res) => {
     res.json({
       configured: isNotionConfigured(),
       envVar: 'NOTION_API_KEY',
     });
   });
 
-  router.get('/integrations/notion/search', requireApiAuth('read'), async (req, res) => {
+  router.get('/integrations/notion/search', requireApiAuth('read', { gmOnly: true }), async (req, res) => {
     if (!isNotionConfigured()) {
       return res.status(503).json({
         error: 'notion_not_configured',
@@ -755,7 +779,7 @@ export function createApiV1Router(store: LocalApiStore) {
     }
   });
 
-  router.post('/integrations/notion/import', requireApiAuth('write'), async (req, res) => {
+  router.post('/integrations/notion/import', requireApiAuth('write', { gmOnly: true }), async (req, res) => {
     if (!isNotionConfigured()) {
       return res.status(503).json({
         error: 'notion_not_configured',
@@ -833,12 +857,12 @@ export function createApiV1Router(store: LocalApiStore) {
     res.json(updated);
   });
 
-  router.get('/view-state', requireApiAuth('read'), async (_req, res) => {
+  router.get('/view-state', requireApiAuth('read', { gmOnly: true }), async (_req, res) => {
     const state = await store.getState();
     res.json(state.collections.viewState);
   });
 
-  router.patch('/view-state', requireApiAuth('write'), async (req, res) => {
+  router.patch('/view-state', requireApiAuth('write', { gmOnly: true }), async (req, res) => {
     const parsed = ViewStatePatchSchema.safeParse(req.body);
     if (!parsed.success) return sendValidationError(res, parsed.error);
 
@@ -862,9 +886,12 @@ export function createApiV1Router(store: LocalApiStore) {
     prepareUpdate?: (existing: T, patch: any) => T;
     onDelete?: (id: string, doc: any) => void;
     allowClearAll?: boolean;
+    gmOnly?: boolean;
   }) {
+    const authOpts = config.gmOnly ? { gmOnly: true } : undefined;
+
     // LIST
-    router.get(`/${config.path}`, requireApiAuth('read'), async (req, res) => {
+    router.get(`/${config.path}`, requireApiAuth('read', authOpts), async (req, res) => {
       const state = await store.getState();
       const raw = state.collections[config.collection] as unknown as T[];
       const filtered = config.filter ? config.filter(raw, req) : raw;
@@ -880,7 +907,7 @@ export function createApiV1Router(store: LocalApiStore) {
     });
 
     // GET BY ID
-    router.get(`/${config.path}/:id`, requireApiAuth('read'), async (req, res) => {
+    router.get(`/${config.path}/:id`, requireApiAuth('read', authOpts), async (req, res) => {
       const state = await store.getState();
       const list = state.collections[config.collection] as unknown as T[];
       const item = list.find((entry) => entry.id === req.params.id);
@@ -891,7 +918,7 @@ export function createApiV1Router(store: LocalApiStore) {
     });
 
     // CREATE
-    router.post(`/${config.path}`, requireApiAuth('write'), async (req, res) => {
+    router.post(`/${config.path}`, requireApiAuth('write', authOpts), async (req, res) => {
       const parsed = config.createSchema.safeParse(req.body);
       if (!parsed.success) return sendValidationError(res, parsed.error);
       const dataObj = parsed.data as Record<string, any>;
@@ -918,7 +945,7 @@ export function createApiV1Router(store: LocalApiStore) {
     });
 
     // REPLACE (PUT)
-    router.put(`/${config.path}/:id`, requireApiAuth('write'), async (req, res) => {
+    router.put(`/${config.path}/:id`, requireApiAuth('write', authOpts), async (req, res) => {
       const parsed = config.createSchema.safeParse({ ...req.body, id: req.params.id });
       if (!parsed.success) return sendValidationError(res, parsed.error);
       const dataObj = parsed.data as Record<string, any>;
@@ -943,7 +970,7 @@ export function createApiV1Router(store: LocalApiStore) {
 
     // PARTIAL UPDATE (PATCH)
     if (config.patchSchema) {
-      router.patch(`/${config.path}/:id`, requireApiAuth('write'), async (req, res) => {
+      router.patch(`/${config.path}/:id`, requireApiAuth('write', authOpts), async (req, res) => {
         const parsed = config.patchSchema!.safeParse(req.body);
         if (!parsed.success) return sendValidationError(res, parsed.error);
         const patchObj = parsed.data as Record<string, any>;
@@ -968,7 +995,7 @@ export function createApiV1Router(store: LocalApiStore) {
     }
 
     // DELETE BY ID
-    router.delete(`/${config.path}/:id`, requireApiAuth('write'), async (req, res) => {
+    router.delete(`/${config.path}/:id`, requireApiAuth('write', authOpts), async (req, res) => {
       const deleted = await store.mutate((doc) => {
         const list = doc.collections[config.collection] as unknown as T[];
         const idx = list.findIndex((entry) => entry.id === req.params.id);
@@ -986,7 +1013,7 @@ export function createApiV1Router(store: LocalApiStore) {
 
     // OPTIONAL CLEAR COLLECTION (e.g. history)
     if (config.allowClearAll) {
-      router.delete(`/${config.path}`, requireApiAuth('write'), async (_req, res) => {
+      router.delete(`/${config.path}`, requireApiAuth('write', authOpts), async (_req, res) => {
         await store.mutate((doc) => {
           (doc.collections[config.collection] as unknown as T[]).length = 0;
         });
@@ -1002,6 +1029,7 @@ export function createApiV1Router(store: LocalApiStore) {
     idPrefix: 'note',
     createSchema: NoteSchema,
     patchSchema: NotePatchSchema,
+    gmOnly: true,
     filter: (items, req) => {
       let out = items;
       const layerId = typeof req.query.layerId === 'string' ? req.query.layerId : undefined;
@@ -1046,6 +1074,7 @@ export function createApiV1Router(store: LocalApiStore) {
     idPrefix: 'link',
     createSchema: LinkSchema,
     patchSchema: LinkPatchSchema,
+    gmOnly: true,
     filter: (items, req) => {
       let out = items;
       if (typeof req.query.fromId === 'string') {
@@ -1064,6 +1093,7 @@ export function createApiV1Router(store: LocalApiStore) {
     idPrefix: 'layer',
     createSchema: LayerSchema,
     patchSchema: LayerPatchSchema,
+    gmOnly: true,
   });
 
   registerCrudResource({
@@ -1072,6 +1102,7 @@ export function createApiV1Router(store: LocalApiStore) {
     idPrefix: 'frame',
     createSchema: FrameSchema,
     patchSchema: FramePatchSchema,
+    gmOnly: true,
   });
 
   registerCrudResource({
@@ -1080,6 +1111,7 @@ export function createApiV1Router(store: LocalApiStore) {
     idPrefix: 'draw',
     createSchema: DrawingSchema,
     patchSchema: DrawingPatchSchema,
+    gmOnly: true,
     filter: (items, req) => {
       let out = items;
       if (typeof req.query.layerId === 'string') {
@@ -1177,6 +1209,7 @@ export function createApiV1Router(store: LocalApiStore) {
     idPrefix: 'gen',
     createSchema: LootGeneratorSchema,
     patchSchema: LootGeneratorPatchSchema,
+    gmOnly: true,
     prepareCreate: (data) => {
       const now = Date.now();
       return {
@@ -1198,6 +1231,7 @@ export function createApiV1Router(store: LocalApiStore) {
     collection: 'lootGroups',
     idPrefix: 'lootgrp',
     createSchema: LootGroupSchema,
+    gmOnly: true,
     filter: (items, req) => {
       if (typeof req.query.generatorId === 'string') {
         return items.filter((g: any) => g.generatorId === req.query.generatorId);
@@ -1209,6 +1243,294 @@ export function createApiV1Router(store: LocalApiStore) {
       id: data.id || `lootgrp-${crypto.randomUUID()}`,
       createdAt: data.createdAt ?? Date.now(),
     }),
+  });
+
+  // ---------------- Player Character & Sidekick Sheets ----------------
+  // Players manage their own characters & sidekicks; GM and Admin explore all users' sheets.
+
+  router.get('/player-sheets', requireAuthenticatedUser, async (req, res) => {
+    const auth = req.auth;
+    if (!auth || auth.kind !== 'user' || !auth.role || !auth.userId) {
+      return res.status(401).json({ error: 'unauthorized', message: 'Sessão inválida.' });
+    }
+    if (auth.role === 'viewer') {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Observadores não têm acesso à gestão de fichas de jogadores.',
+      });
+    }
+
+    const state = await store.getState();
+    const isGmOrAdminRole = auth.role === 'admin' || auth.role === 'gm';
+
+    let items = [...state.collections.playerSheets];
+
+    // Strict ownership scoping: players can only ever see their own sheets
+    if (!isGmOrAdminRole) {
+      items = items.filter((s) => s.ownerUserId === auth.userId);
+    } else if (typeof req.query.ownerUserId === 'string' && req.query.ownerUserId.trim()) {
+      const targetOwner = req.query.ownerUserId.trim();
+      items = items.filter((s) => s.ownerUserId === targetOwner);
+    }
+
+    if (req.query.kind === 'character' || req.query.kind === 'sidekick') {
+      items = items.filter((s) => s.kind === req.query.kind);
+    }
+
+    if (typeof req.query.search === 'string' && req.query.search.trim()) {
+      const q = req.query.search.trim().toLowerCase();
+      items = items.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.ownerDisplayName.toLowerCase().includes(q) ||
+          s.ownerUsername.toLowerCase().includes(q) ||
+          s.sheet.race.toLowerCase().includes(q) ||
+          s.sheet.characterClass.toLowerCase().includes(q)
+      );
+    }
+
+    items.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    return res.json({
+      items,
+      total: items.length,
+    });
+  });
+
+  router.get('/player-sheets/:id', requireAuthenticatedUser, async (req, res) => {
+    const auth = req.auth;
+    if (!auth || auth.kind !== 'user' || !auth.role || !auth.userId) {
+      return res.status(401).json({ error: 'unauthorized', message: 'Sessão inválida.' });
+    }
+    if (auth.role === 'viewer') {
+      return res.status(403).json({ error: 'forbidden', message: 'Acesso negado.' });
+    }
+
+    const state = await store.getState();
+    const sheet = state.collections.playerSheets.find((s) => s.id === req.params.id);
+    if (!sheet) {
+      return res.status(404).json({ error: 'not_found', message: 'Ficha não encontrada.' });
+    }
+
+    const isGmOrAdminRole = auth.role === 'admin' || auth.role === 'gm';
+    if (!isGmOrAdminRole && sheet.ownerUserId !== auth.userId) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Você não tem permissão para acessar esta ficha.',
+      });
+    }
+
+    return res.json(sheet);
+  });
+
+  router.post('/player-sheets', requireAuthenticatedUser, async (req, res) => {
+    const auth = req.auth;
+    if (!auth || auth.kind !== 'user' || !auth.role || !auth.userId || !auth.username) {
+      return res.status(401).json({ error: 'unauthorized', message: 'Sessão inválida.' });
+    }
+    if (auth.role === 'viewer') {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Observadores não podem criar fichas.',
+      });
+    }
+
+    const parsed = PlayerSheetCreateSchema.safeParse(req.body);
+    if (!parsed.success) return sendValidationError(res, parsed.error);
+
+    const state = await store.getState();
+    const ownCount = state.collections.playerSheets.filter(
+      (s) => s.ownerUserId === auth.userId
+    ).length;
+    if (ownCount >= 100) {
+      return res.status(400).json({
+        error: 'limit_reached',
+        message: 'Limite máximo de 100 fichas por usuário atingido.',
+      });
+    }
+
+    const data = parsed.data;
+    const ownerDisplayName = auth.displayName || auth.username;
+
+    const created = await store.mutate((doc) => {
+      let masterCharacterId: string | undefined;
+      let masterCharacterName: string | undefined;
+
+      if (data.kind === 'sidekick' && data.masterCharacterId) {
+        const master = doc.collections.playerSheets.find(
+          (s) =>
+            s.id === data.masterCharacterId &&
+            s.kind === 'character' &&
+            s.ownerUserId === auth.userId
+        );
+        if (master) {
+          masterCharacterId = master.id;
+          masterCharacterName = master.name;
+        }
+      }
+
+      const now = Date.now();
+      const record: PlayerSheet = {
+        id: `psheet-${crypto.randomUUID()}`,
+        kind: data.kind,
+        name: data.name,
+        ...(data.kind === 'sidekick'
+          ? { sidekickRole: data.sidekickRole || 'warrior' }
+          : {}),
+        ...(masterCharacterId ? { masterCharacterId, masterCharacterName } : {}),
+        notes: data.notes,
+        sheet: {
+          ...data.sheet,
+          playerName: data.sheet.playerName?.trim() || ownerDisplayName,
+        },
+        ownerUserId: auth.userId!,
+        ownerUsername: auth.username!,
+        ownerDisplayName,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      doc.collections.playerSheets.push(record);
+      return record;
+    });
+
+    return res.status(201).json(created);
+  });
+
+  router.patch('/player-sheets/:id', requireAuthenticatedUser, async (req, res) => {
+    const auth = req.auth;
+    if (!auth || auth.kind !== 'user' || !auth.role || !auth.userId) {
+      return res.status(401).json({ error: 'unauthorized', message: 'Sessão inválida.' });
+    }
+    if (auth.role === 'viewer') {
+      return res.status(403).json({ error: 'forbidden', message: 'Acesso negado.' });
+    }
+
+    const parsed = PlayerSheetPatchSchema.safeParse(req.body);
+    if (!parsed.success) return sendValidationError(res, parsed.error);
+
+    const state = await store.getState();
+    const existing = state.collections.playerSheets.find((s) => s.id === req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'not_found', message: 'Ficha não encontrada.' });
+    }
+
+    const isGmOrAdminRole = auth.role === 'admin' || auth.role === 'gm';
+    if (!isGmOrAdminRole && existing.ownerUserId !== auth.userId) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Você só pode editar suas próprias fichas.',
+      });
+    }
+
+    const patch = parsed.data;
+    const updated = await store.mutate((doc) => {
+      const idx = doc.collections.playerSheets.findIndex((s) => s.id === req.params.id);
+      if (idx < 0) return null;
+      const current = doc.collections.playerSheets[idx];
+      const nextKind = patch.kind ?? current.kind;
+
+      let nextMasterId = current.masterCharacterId;
+      let nextMasterName = current.masterCharacterName;
+
+      if (nextKind !== 'sidekick') {
+        nextMasterId = undefined;
+        nextMasterName = undefined;
+      } else if (patch.masterCharacterId !== undefined) {
+        if (patch.masterCharacterId === null || patch.masterCharacterId === '') {
+          nextMasterId = undefined;
+          nextMasterName = undefined;
+        } else {
+          const master = doc.collections.playerSheets.find(
+            (s) =>
+              s.id === patch.masterCharacterId &&
+              s.kind === 'character' &&
+              s.ownerUserId === current.ownerUserId
+          );
+          if (master) {
+            nextMasterId = master.id;
+            nextMasterName = master.name;
+          }
+        }
+      }
+
+      const nextRecord: PlayerSheet = {
+        ...current,
+        kind: nextKind,
+        name: patch.name ?? current.name,
+        sidekickRole:
+          nextKind === 'sidekick'
+            ? patch.sidekickRole === null
+              ? undefined
+              : patch.sidekickRole ?? current.sidekickRole ?? 'warrior'
+            : undefined,
+        masterCharacterId: nextMasterId,
+        masterCharacterName: nextMasterName,
+        notes: patch.notes ?? current.notes,
+        sheet: patch.sheet ? { ...patch.sheet } : current.sheet,
+        // Preserve immutable owner identity
+        ownerUserId: current.ownerUserId,
+        ownerUsername: current.ownerUsername,
+        ownerDisplayName: current.ownerDisplayName,
+        updatedAt: Date.now(),
+      };
+
+      doc.collections.playerSheets[idx] = nextRecord;
+
+      // Keep linked sidekicks' masterCharacterName in sync when a character is renamed
+      if (nextRecord.kind === 'character' && nextRecord.name !== current.name) {
+        for (const candidate of doc.collections.playerSheets) {
+          if (candidate.masterCharacterId === nextRecord.id) {
+            candidate.masterCharacterName = nextRecord.name;
+          }
+        }
+      }
+
+      return nextRecord;
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'not_found', message: 'Ficha não encontrada.' });
+    }
+    return res.json(updated);
+  });
+
+  router.delete('/player-sheets/:id', requireAuthenticatedUser, async (req, res) => {
+    const auth = req.auth;
+    if (!auth || auth.kind !== 'user' || !auth.role || !auth.userId) {
+      return res.status(401).json({ error: 'unauthorized', message: 'Sessão inválida.' });
+    }
+    if (auth.role === 'viewer') {
+      return res.status(403).json({ error: 'forbidden', message: 'Acesso negado.' });
+    }
+
+    const state = await store.getState();
+    const existing = state.collections.playerSheets.find((s) => s.id === req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'not_found', message: 'Ficha não encontrada.' });
+    }
+
+    if (existing.ownerUserId !== auth.userId && auth.role !== 'admin') {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Você só pode excluir suas próprias fichas.',
+      });
+    }
+
+    await store.mutate((doc) => {
+      doc.collections.playerSheets = doc.collections.playerSheets.filter(
+        (s) => s.id !== req.params.id
+      );
+      // Clear orphaned master references on sidekicks
+      for (const candidate of doc.collections.playerSheets) {
+        if (candidate.masterCharacterId === req.params.id) {
+          candidate.masterCharacterId = undefined;
+          candidate.masterCharacterName = undefined;
+        }
+      }
+    });
+
+    return res.json({ deleted: true, id: req.params.id });
   });
 
   // Clean JSON 404 for unknown /api/v1/* routes

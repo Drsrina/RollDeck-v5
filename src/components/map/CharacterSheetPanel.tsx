@@ -163,15 +163,45 @@ export const CharacterSheetPanel: React.FC<CharacterSheetPanelProps> = ({
   const handleUploadAvatar = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/*';
+    input.accept = 'image/png,image/jpeg,image/webp,image/gif';
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          update({ avatarUrl: reader.result });
-        }
+        if (typeof reader.result !== 'string') return;
+        const rawDataUrl = reader.result;
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 384;
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            const scale = Math.min(maxDim / width, maxDim / height);
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+          }
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const compressed = canvas.toDataURL('image/webp', 0.85);
+              if (compressed.startsWith('data:image/')) {
+                update({ avatarUrl: compressed });
+                return;
+              }
+            }
+          } catch {
+            // Fallback to original raster data URL if canvas fails
+          }
+          update({ avatarUrl: rawDataUrl });
+        };
+        img.onerror = () => {
+          update({ avatarUrl: rawDataUrl });
+        };
+        img.src = rawDataUrl;
       };
       reader.readAsDataURL(file);
     };
@@ -197,6 +227,7 @@ export const CharacterSheetPanel: React.FC<CharacterSheetPanelProps> = ({
             <img
               src={value.avatarUrl}
               alt={characterName}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
             />
           ) : (

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import React, { useRef, useState } from 'react';
 import { playCriticalFailSound, playCriticalSuccessSound, playDiceRollSound } from '../../lib/audio';
+import { isGmOrAdmin, useAuthSession } from '../../lib/authSession';
 import { rollSingleDieRaw } from '../../lib/roll';
 import { rollVttDamageExpression } from '../../lib/vttGrid';
 import { useAppStore } from '../../store/useAppStore';
@@ -121,6 +122,8 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
   } = useVttStore();
 
   const soundEnabled = useAppStore((s) => s.settings.soundEnabled);
+  const { user: currentUser } = useAuthSession();
+  const canSyncSheet = isGmOrAdmin(currentUser);
 
   const [hpInput, setHpInput] = useState('5');
   const [syncedFeedback, setSyncedFeedback] = useState(false);
@@ -600,8 +603,8 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                 </button>
               </div>
 
-              {/* Character Sheet Sync Banner */}
-              {selectedToken.sourceNoteId && (
+              {/* Character Sheet Sync Banner (somente Mestre/Admin) */}
+              {selectedToken.sourceNoteId && canSyncSheet && (
                 <button
                   type="button"
                   onClick={handleSyncToSheet}

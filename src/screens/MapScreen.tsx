@@ -3,6 +3,7 @@ import { LayersSheet } from '../components/map/LayersSheet';
 import { MapCanvas } from '../components/map/MapCanvas';
 import { NoteEditorModal } from '../components/map/NoteEditorModal';
 import { NotesListSheet } from '../components/map/NotesListSheet';
+import { PlayerSheetsExplorerModal } from '../components/map/PlayerSheetsExplorerModal';
 
 export const MapScreen: React.FC = () => {
   return (
@@ -11,6 +12,7 @@ export const MapScreen: React.FC = () => {
       <NoteEditorModal />
       <LayersSheet />
       <NotesListSheet />
+      <PlayerSheetsExplorerModal />
     </div>
   );
 };

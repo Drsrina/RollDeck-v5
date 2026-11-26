@@ -38,22 +38,55 @@ export const ROLE_META: Record<
   gm: {
     label: 'Mestre (GM)',
     shortLabel: 'Mestre',
-    description: 'Edita campanha, notas, mapa, dados, pacotes, rolagens e geradores RPG.',
+    description:
+      'Acesso completo à campanha: Forja de Mundos, Mapa de Notas, Oráculo, Geradores de Loot, VTT, pacotes e rolagens.',
     badgeClass: 'bg-purple-500/20 text-purple-300 border-purple-400/40',
   },
   player: {
     label: 'Jogador',
     shortLabel: 'Jogador',
-    description: 'Consulta campanha, rola dados, usa Oráculo e geradores sem alterar dados do mestre.',
+    description:
+      'Cria e joga fichas de Personagens e Sidekicks, usa Mesa de Rolagem, Pacotes, Tabuleiro VTT e Histórico.',
     badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40',
   },
   viewer: {
     label: 'Observador',
     shortLabel: 'Observador',
-    description: 'Acesso somente leitura aos registros e histórico da campanha.',
+    description:
+      'Acesso somente leitura à Mesa, Pacotes, Tabuleiro VTT e Histórico (sem acesso às ferramentas do Mestre).',
     badgeClass: 'bg-slate-500/20 text-slate-300 border-slate-400/40',
   },
 };
+
+export type AppTabId =
+  | 'roll'
+  | 'sheets'
+  | 'packages'
+  | 'map'
+  | 'vtt'
+  | 'loot'
+  | 'forja'
+  | 'oraculo'
+  | 'history'
+  | 'settings';
+
+export const GM_ONLY_TABS: readonly AppTabId[] = ['forja', 'map', 'oraculo', 'loot'] as const;
+
+export const PLAYER_ONLY_TABS: readonly AppTabId[] = ['sheets'] as const;
+
+export function isGmOrAdmin(user: AuthUser | null): boolean {
+  return user?.role === 'admin' || user?.role === 'gm';
+}
+
+export function canAccessTab(user: AuthUser | null, tab: AppTabId): boolean {
+  if (GM_ONLY_TABS.includes(tab)) {
+    return isGmOrAdmin(user);
+  }
+  if (PLAYER_ONLY_TABS.includes(tab)) {
+    return user?.role === 'player';
+  }
+  return true;
+}
 
 /**
  * In-memory session holder for authenticated RollDeck users.

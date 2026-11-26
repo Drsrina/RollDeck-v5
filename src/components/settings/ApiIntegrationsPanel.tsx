@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { exportBackupJSON, importBackupJSON } from '../../db/indexedDB';
-import { apiFetch, hasScope, useAuthSession } from '../../lib/authSession';
+import { apiFetch, hasScope, isGmOrAdmin, useAuthSession } from '../../lib/authSession';
 import { useAppStore } from '../../store/useAppStore';
 import { ExternalNotesImportSection } from './ExternalNotesImportSection';
 
@@ -64,9 +64,10 @@ export const ApiIntegrationsPanel: React.FC = () => {
   const { refreshFromDB } = useAppStore();
   const { user: currentUser } = useAuthSession();
   const isAdmin = currentUser?.role === 'admin';
+  const canUseGmModules = isGmOrAdmin(currentUser);
   const canWrite = hasScope(currentUser, 'write');
   const canRoll = hasScope(currentUser, 'roll');
-  const canGenerate = hasScope(currentUser, 'generate');
+  const canGenerate = hasScope(currentUser, 'generate') && canUseGmModules;
 
   const [apiInfo, setApiInfo] = useState<ApiInfo | null>(null);
   const [keys, setKeys] = useState<PublicApiKey[]>([]);
@@ -410,15 +411,19 @@ export const ApiIntegrationsPanel: React.FC = () => {
 
         {/* Counts Grid */}
         {apiInfo && (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-            <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
-              <span className="text-[10px] text-slate-400 block">Notas na API</span>
-              <strong className="text-base font-black text-cyan-300">{apiInfo.counts.notes}</strong>
-            </div>
-            <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
-              <span className="text-[10px] text-slate-400 block">Desenhos SVG</span>
-              <strong className="text-base font-black text-purple-300">{apiInfo.counts.drawings}</strong>
-            </div>
+          <div className={`grid grid-cols-2 ${canUseGmModules ? 'sm:grid-cols-5' : 'sm:grid-cols-2'} gap-2 text-xs`}>
+            {canUseGmModules && (
+              <>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block">Notas na API</span>
+                  <strong className="text-base font-black text-cyan-300">{apiInfo.counts.notes}</strong>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block">Desenhos SVG</span>
+                  <strong className="text-base font-black text-purple-300">{apiInfo.counts.drawings}</strong>
+                </div>
+              </>
+            )}
             <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
               <span className="text-[10px] text-slate-400 block">Pacotes</span>
               <strong className="text-base font-black text-emerald-300">{apiInfo.counts.packages}</strong>
@@ -427,10 +432,12 @@ export const ApiIntegrationsPanel: React.FC = () => {
               <span className="text-[10px] text-slate-400 block">Histórico</span>
               <strong className="text-base font-black text-amber-300">{apiInfo.counts.history}</strong>
             </div>
-            <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
-              <span className="text-[10px] text-slate-400 block">Camadas</span>
-              <strong className="text-base font-black text-slate-200">{apiInfo.counts.layers}</strong>
-            </div>
+            {canUseGmModules && (
+              <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                <span className="text-[10px] text-slate-400 block">Camadas</span>
+                <strong className="text-base font-black text-slate-200">{apiInfo.counts.layers}</strong>
+              </div>
+            )}
           </div>
         )}
 
@@ -467,8 +474,8 @@ export const ApiIntegrationsPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* External Knowledge Import (Obsidian & Notion) */}
-      <ExternalNotesImportSection onImportSuccess={loadApiState} onNotify={notify} />
+      {/* External Knowledge Import (Obsidian & Notion - somente Mestre/Admin) */}
+      {canUseGmModules && <ExternalNotesImportSection onImportSuccess={loadApiState} onNotify={notify} />}
 
       {/* External API Keys Management (Admin Only) */}
       <div className="rounded-2xl glass-panel p-4 border border-white/10 space-y-3">
@@ -658,7 +665,7 @@ export const ApiIntegrationsPanel: React.FC = () => {
           <button
             type="button"
             disabled={testingEndpoint !== null || !canGenerate}
-            title={!canGenerate ? 'Requer permissão de geradores (Jogador, Mestre ou Admin)' : undefined}
+            title={!canGenerate ? 'Restrito a Mestre (GM) ou Administrador' : undefined}
             onClick={() =>
               runLiveTest('oracle', '/api/v1/oracle', 'POST', {
                 pergunta: 'Há uma passagem secreta na biblioteca?',
@@ -674,9 +681,10 @@ export const ApiIntegrationsPanel: React.FC = () => {
 
           <button
             type="button"
-            disabled={testingEndpoint !== null}
+            disabled={testingEndpoint !== null || !canUseGmModules}
+            title={!canUseGmModules ? 'Restrito a Mestre (GM) ou Administrador' : undefined}
             onClick={() => runLiveTest('notes', '/api/v1/notes?limit=10', 'GET')}
-            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-bold flex items-center gap-1.5 transition"
+            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Play className="w-3.5 h-3.5" />
             <span>GET /api/v1/notes</span>
@@ -685,7 +693,7 @@ export const ApiIntegrationsPanel: React.FC = () => {
           <button
             type="button"
             disabled={testingEndpoint !== null || !canGenerate}
-            title={!canGenerate ? 'Requer permissão de geradores (Jogador, Mestre ou Admin)' : undefined}
+            title={!canGenerate ? 'Restrito a Mestre (GM) ou Administrador' : undefined}
             onClick={() => runLiveTest('npcs', '/api/v1/forja/npcs', 'POST', { seed: 42, count: 2 })}
             className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >

@@ -18,6 +18,7 @@ import { VttWeatherOverlay } from './VttWeatherOverlay';
 
 interface VttCanvasProps {
   scene: VttScene;
+  canImportFromGmModules?: boolean;
   onOpenNewToken: () => void;
   onOpenImportCharacters: () => void;
   onOpenImportEncounter: () => void;
@@ -62,6 +63,7 @@ function getInitials(name: string): string {
 
 export const VttCanvas: React.FC<VttCanvasProps> = ({
   scene,
+  canImportFromGmModules = true,
   onOpenNewToken,
   onOpenImportCharacters,
   onOpenImportEncounter,
@@ -904,26 +906,36 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
             <div className="space-y-1">
               <h3 className="text-base font-bold text-white">Arena pronta para combate</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Importe fichas do Mapa de Notas, traga monstros de um encontro da Forja de Mundos ou crie tokens manuais sobre o grid.
+                {canImportFromGmModules
+                  ? 'Importe fichas do Mapa de Notas, traga monstros de um encontro da Forja de Mundos ou crie tokens manuais sobre o grid.'
+                  : 'Adicione tokens manuais sobre o grid para acompanhar posições, PV, CA e iniciativa.'}
               </p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={onOpenImportCharacters}
-                className="px-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
-              >
-                <Users className="w-3.5 h-3.5 shrink-0" />
-                <span>Fichas</span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenImportEncounter}
-                className="px-3 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/35 text-rose-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
-              >
-                <Compass className="w-3.5 h-3.5 shrink-0" />
-                <span>Encontro</span>
-              </button>
+            <div
+              className={`grid grid-cols-1 ${
+                canImportFromGmModules ? 'sm:grid-cols-3' : 'max-w-[200px] mx-auto'
+              } gap-2`}
+            >
+              {canImportFromGmModules && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onOpenImportCharacters}
+                    className="px-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                  >
+                    <Users className="w-3.5 h-3.5 shrink-0" />
+                    <span>Fichas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onOpenImportEncounter}
+                    className="px-3 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/35 text-rose-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                  >
+                    <Compass className="w-3.5 h-3.5 shrink-0" />
+                    <span>Encontro</span>
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 onClick={onOpenNewToken}

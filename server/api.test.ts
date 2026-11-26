@@ -179,10 +179,40 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
     const playerToken = await loginAs('jogador1', 'senha-jogador-1');
     const viewerToken = await loginAs('obs1', 'senha-obs-1');
 
-    // VIEWER: can read, blocked on roll, oracle, write, users, keys
+    // VIEWER: can read packages/history, blocked on roll, notes, loot, oracle, forja, write, users, keys
+    expect(
+      (await fetch(`${baseUrl}/api/v1/packages`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
+    ).toBe(200);
     expect(
       (await fetch(`${baseUrl}/api/v1/notes`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
-    ).toBe(200);
+    ).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/api/v1/loot-generators`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
+    ).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/api/v1/loot-groups`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
+    ).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/api/v1/view-state`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/oracle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${viewerToken}` },
+          body: JSON.stringify({ pergunta: 'Bloqueado?', seed: 10 }),
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/forja/npcs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${viewerToken}` },
+          body: JSON.stringify({ seed: 10, count: 2 }),
+        })
+      ).status
+    ).toBe(403);
     expect(
       (
         await fetch(`${baseUrl}/api/v1/roll`, {
@@ -205,7 +235,10 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
       (await fetch(`${baseUrl}/api/v1/users`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
     ).toBe(403);
 
-    // PLAYER: can read, roll, oracle, but blocked on write, users, keys
+    // PLAYER: can read packages and roll, but blocked on notes, loot, oracle, forja, write, users, keys
+    expect(
+      (await fetch(`${baseUrl}/api/v1/packages`, { headers: { Authorization: `Bearer ${playerToken}` } })).status
+    ).toBe(200);
     expect(
       (
         await fetch(`${baseUrl}/api/v1/roll`, {
@@ -223,7 +256,22 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
           body: JSON.stringify({ pergunta: 'A porta abre?', seed: 10 }),
         })
       ).status
-    ).toBe(200);
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/forja/world`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${playerToken}` },
+          body: JSON.stringify({ seed: 10 }),
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/api/v1/notes`, { headers: { Authorization: `Bearer ${playerToken}` } })).status
+    ).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/api/v1/loot-generators`, { headers: { Authorization: `Bearer ${playerToken}` } })).status
+    ).toBe(403);
     expect(
       (
         await fetch(`${baseUrl}/api/v1/notes`, {
@@ -237,7 +285,7 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
       (await fetch(`${baseUrl}/api/v1/users`, { headers: { Authorization: `Bearer ${playerToken}` } })).status
     ).toBe(403);
 
-    // GM: can write notes, blocked on users and API keys
+    // GM: can read/write notes, access loot, oracle, and forja, but blocked on users and API keys
     const gmCreateNote = await fetch(`${baseUrl}/api/v1/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` },
@@ -245,11 +293,46 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
     });
     expect(gmCreateNote.status).toBe(201);
     expect(
+      (await fetch(`${baseUrl}/api/v1/loot-generators`, { headers: { Authorization: `Bearer ${gmToken}` } })).status
+    ).toBe(200);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/oracle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` },
+          body: JSON.stringify({ pergunta: 'A porta abre?', seed: 10 }),
+        })
+      ).status
+    ).toBe(200);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/forja/npcs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` },
+          body: JSON.stringify({ seed: 10, count: 2 }),
+        })
+      ).status
+    ).toBe(200);
+    expect(
       (await fetch(`${baseUrl}/api/v1/users`, { headers: { Authorization: `Bearer ${gmToken}` } })).status
     ).toBe(403);
     expect(
       (await fetch(`${baseUrl}/api/v1/keys`, { headers: { Authorization: `Bearer ${gmToken}` } })).status
     ).toBe(403);
+
+    // Snapshot redacts GM-only collections (notes, loot) for player & viewer while GM sees them
+    const playerSnapshot = await fetch(`${baseUrl}/api/v1/snapshot`, {
+      headers: { Authorization: `Bearer ${playerToken}` },
+    }).then((r) => r.json());
+    expect(playerSnapshot.notes).toEqual([]);
+    expect(playerSnapshot.lootGenerators).toEqual([]);
+    expect(playerSnapshot.packages.length).toBeGreaterThan(0);
+
+    const gmSnapshot = await fetch(`${baseUrl}/api/v1/snapshot`, {
+      headers: { Authorization: `Bearer ${gmToken}` },
+    }).then((r) => r.json());
+    expect(gmSnapshot.notes.length).toBeGreaterThan(0);
+    expect(gmSnapshot.lootGenerators.length).toBeGreaterThan(0);
 
     // Deactivating a user revokes active session immediately and blocks login
     const deactivateRes = await fetch(`${baseUrl}/api/v1/users/${viewerUserId}`, {
@@ -262,7 +345,7 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
     });
     expect(deactivateRes.status).toBe(200);
     expect(
-      (await fetch(`${baseUrl}/api/v1/notes`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
+      (await fetch(`${baseUrl}/api/v1/packages`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
     ).toBe(401);
     const deactivatedLogin = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
@@ -289,12 +372,12 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
 
     // Old player token must be rejected now
     expect(
-      (await fetch(`${baseUrl}/api/v1/notes`, { headers: { Authorization: `Bearer ${playerToken}` } })).status
+      (await fetch(`${baseUrl}/api/v1/packages`, { headers: { Authorization: `Bearer ${playerToken}` } })).status
     ).toBe(401);
-    // New player token works
+    // New player token works on allowed routes
     expect(
       (
-        await fetch(`${baseUrl}/api/v1/notes`, {
+        await fetch(`${baseUrl}/api/v1/packages`, {
           headers: { Authorization: `Bearer ${changedBody.sessionToken}` },
         })
       ).status
@@ -688,5 +771,224 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
       }
     }
   });
+
+  it('permite jogadores criarem personagens e sidekicks com isolamento de dono, e permite GM/Admin explorarem todas as fichas', async () => {
+    const createUser = async (username: string, displayName: string, role: string, password: string) => {
+      const res = await fetch(`${baseUrl}/api/v1/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminSessionToken}`,
+        },
+        body: JSON.stringify({ username, displayName, role, password }),
+      });
+      expect(res.status).toBe(201);
+      return (await res.json()) as { id: string };
+    };
+
+    const login = async (username: string, password: string) => {
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { sessionToken: string }).sessionToken;
+    };
+
+    await createUser('jog_alice', 'Alice', 'player', 'senha-alice-1');
+    await createUser('jog_bruno', 'Bruno', 'player', 'senha-bruno-1');
+    await createUser('mestre_caio', 'Caio GM', 'gm', 'senha-caio-1');
+    await createUser('obs_diana', 'Diana Obs', 'viewer', 'senha-diana-1');
+
+    const aliceToken = await login('jog_alice', 'senha-alice-1');
+    const brunoToken = await login('jog_bruno', 'senha-bruno-1');
+    const gmToken = await login('mestre_caio', 'senha-caio-1');
+    const viewerToken = await login('obs_diana', 'senha-diana-1');
+
+    const baseSheet = {
+      race: 'Elfa',
+      characterClass: 'Patrulheira',
+      level: 3,
+      hpCurrent: 24,
+      hpMax: 24,
+      hpTemp: 0,
+      ac: 15,
+      initiative: 3,
+      speed: '9m',
+      proficiencyBonus: 2,
+      attributes: { str: 10, dex: 16, con: 12, int: 12, wis: 14, cha: 10 },
+      savingThrowProficiencies: ['str', 'dex'],
+      skills: ['Furtividade', 'Percepção'],
+      attacks: [{ id: 'atk-1', name: 'Arco Longo', bonus: 5, damage: '1d8+3 perfurante' }],
+      conditions: [],
+      inventory: 'Arco longo, aljava',
+      spellsAndFeatures: 'Marca do Caçador',
+    };
+
+    // Viewer is blocked on player-sheets
+    expect(
+      (await fetch(`${baseUrl}/api/v1/player-sheets`, { headers: { Authorization: `Bearer ${viewerToken}` } })).status
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/player-sheets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${viewerToken}` },
+          body: JSON.stringify({ kind: 'character', name: 'Bloqueado', notes: '', sheet: baseSheet }),
+        })
+      ).status
+    ).toBe(403);
+
+    // Unsafe avatar URLs must be rejected with 400
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/player-sheets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+          body: JSON.stringify({
+            kind: 'character',
+            name: 'XSS Test',
+            notes: '',
+            sheet: { ...baseSheet, avatarUrl: 'javascript:alert(1)' },
+          }),
+        })
+      ).status
+    ).toBe(400);
+
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/player-sheets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+          body: JSON.stringify({
+            kind: 'character',
+            name: 'SVG Test',
+            notes: '',
+            sheet: { ...baseSheet, avatarUrl: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' },
+          }),
+        })
+      ).status
+    ).toBe(400);
+
+    // Alice creates a Character and a linked Sidekick (attempting to spoof ownerUsername must be ignored)
+    const charRes = await fetch(`${baseUrl}/api/v1/player-sheets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+      body: JSON.stringify({
+        kind: 'character',
+        name: 'Lyra Ventolâmina',
+        notes: 'Guardiã das fronteiras do norte.',
+        sheet: baseSheet,
+        ownerUsername: 'admin',
+      }),
+    });
+    expect(charRes.status).toBe(201);
+    const lyra = await charRes.json();
+    expect(lyra.ownerUsername).toBe('jog_alice');
+    expect(lyra.ownerDisplayName).toBe('Alice');
+    expect(lyra.kind).toBe('character');
+
+    const sidekickRes = await fetch(`${baseUrl}/api/v1/player-sheets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+      body: JSON.stringify({
+        kind: 'sidekick',
+        name: 'Fenrir',
+        sidekickRole: 'companion',
+        masterCharacterId: lyra.id,
+        notes: 'Lobo leal de Lyra.',
+        sheet: { ...baseSheet, race: 'Lobo', characterClass: 'Companheiro Fiel', hpCurrent: 16, hpMax: 16 },
+      }),
+    });
+    expect(sidekickRes.status).toBe(201);
+    const fenrir = await sidekickRes.json();
+    expect(fenrir.kind).toBe('sidekick');
+    expect(fenrir.masterCharacterId).toBe(lyra.id);
+    expect(fenrir.masterCharacterName).toBe('Lyra Ventolâmina');
+
+    // Bruno creates his own Character
+    const brunoRes = await fetch(`${baseUrl}/api/v1/player-sheets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${brunoToken}` },
+      body: JSON.stringify({
+        kind: 'character',
+        name: 'Doran Escudoferro',
+        notes: 'Anão clérigo.',
+        sheet: { ...baseSheet, race: 'Anão', characterClass: 'Clérigo', ac: 18 },
+      }),
+    });
+    expect(brunoRes.status).toBe(201);
+
+    // Bruno can only see his own sheet, never Alice's (even with ownerUserId query param)
+    const brunoList = await fetch(
+      `${baseUrl}/api/v1/player-sheets?ownerUserId=${encodeURIComponent(lyra.ownerUserId)}`,
+      { headers: { Authorization: `Bearer ${brunoToken}` } }
+    ).then((r) => r.json());
+    expect(brunoList.total).toBe(1);
+    expect(brunoList.items[0].name).toBe('Doran Escudoferro');
+
+    // Bruno cannot read, edit, or delete Alice's sheet (anti-IDOR)
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/player-sheets/${lyra.id}`, {
+          headers: { Authorization: `Bearer ${brunoToken}` },
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/player-sheets/${lyra.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${brunoToken}` },
+          body: JSON.stringify({ name: 'Hackeado' }),
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/player-sheets/${lyra.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${brunoToken}` },
+        })
+      ).status
+    ).toBe(403);
+
+    // GM & Admin can explore ALL players' sheets and filter by kind & search
+    const gmAll = await fetch(`${baseUrl}/api/v1/player-sheets`, {
+      headers: { Authorization: `Bearer ${gmToken}` },
+    }).then((r) => r.json());
+    expect(gmAll.total).toBe(3);
+
+    const adminSidekicks = await fetch(`${baseUrl}/api/v1/player-sheets?kind=sidekick&search=Fenrir`, {
+      headers: { Authorization: `Bearer ${adminSessionToken}` },
+    }).then((r) => r.json());
+    expect(adminSidekicks.total).toBe(1);
+    expect(adminSidekicks.items[0].name).toBe('Fenrir');
+
+    // Renaming Lyra keeps linked sidekick's masterCharacterName synced
+    const renameRes = await fetch(`${baseUrl}/api/v1/player-sheets/${lyra.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+      body: JSON.stringify({ name: 'Lyra das Estrelas' }),
+    });
+    expect(renameRes.status).toBe(200);
+    const fenrirAfterRename = await fetch(`${baseUrl}/api/v1/player-sheets/${fenrir.id}`, {
+      headers: { Authorization: `Bearer ${aliceToken}` },
+    }).then((r) => r.json());
+    expect(fenrirAfterRename.masterCharacterName).toBe('Lyra das Estrelas');
+
+    // Deleting Lyra succeeds for Alice and clears master reference on Fenrir
+    const delRes = await fetch(`${baseUrl}/api/v1/player-sheets/${lyra.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${aliceToken}` },
+    });
+    expect(delRes.status).toBe(200);
+    const fenrirAfterDelete = await fetch(`${baseUrl}/api/v1/player-sheets/${fenrir.id}`, {
+      headers: { Authorization: `Bearer ${aliceToken}` },
+    }).then((r) => r.json());
+    expect(fenrirAfterDelete.masterCharacterId).toBeUndefined();
+  });
 });
+
 
