@@ -6,4 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
-data/
+/data/
+
+# Dados de runtime e caches do ecossistema .fmg-bundle
+.fmg-bundle/silverbullet_data/
+.fmg-bundle/meu_obsidian_vault/
+.fmg-bundle/dados_mapas/
+.fmg-bundle/**/node_modules/
+.fmg-bundle/**/dist/

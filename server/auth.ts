@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import {
   ROLE_SCOPES,
   type ApiKeyScope,
-  type LocalApiStore,
+  type ApiStore,
   type PublicApiKey,
   type PublicUser,
   type StoredUser,
@@ -135,7 +135,7 @@ function decodeSignedSession(token: string): SessionPayload | null {
 }
 
 export async function verifyUserSession(
-  store: LocalApiStore,
+  store: ApiStore,
   token: string
 ): Promise<PublicUser | null> {
   const payload = decodeSignedSession(token);
@@ -165,7 +165,7 @@ export async function verifyUserSession(
 }
 
 export async function getAuthMode(
-  store: LocalApiStore
+  store: ApiStore
 ): Promise<'users' | 'env' | 'unclaimed'> {
   const state = await store.getState();
   if (state.users.length > 0) return 'users';
@@ -174,7 +174,7 @@ export async function getAuthMode(
 }
 
 export async function setupInitialAdmin(
-  store: LocalApiStore,
+  store: ApiStore,
   input: { username: string; displayName?: string; password: string }
 ): Promise<{ ok: true; user: PublicUser; sessionToken: string } | { ok: false; error: string }> {
   const state = await store.getState();
@@ -211,7 +211,7 @@ export async function setupInitialAdmin(
 }
 
 export async function authenticateUser(
-  store: LocalApiStore,
+  store: ApiStore,
   username: string,
   password: string
 ): Promise<
@@ -314,7 +314,7 @@ export async function authenticateUser(
 }
 
 export async function createExternalApiKey(
-  store: LocalApiStore,
+  store: ApiStore,
   name: string,
   scopes: ApiKeyScope[]
 ): Promise<{ key: PublicApiKey; plaintextKey: string }> {
@@ -369,7 +369,7 @@ export function extractCredentials(req: Request): {
   return {};
 }
 
-export function createAuthMiddleware(store: LocalApiStore) {
+export function createAuthMiddleware(store: ApiStore) {
   const requireAuthenticatedUser = async (req: Request, res: Response, next: NextFunction) => {
     const { sessionToken } = extractCredentials(req);
     if (!sessionToken) {

@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-electron
+.git
+.github
+tests/e2e
+.1implementacoes
+dados_mapas
+meu_obsidian_vault
+silverbullet_data

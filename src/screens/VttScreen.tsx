@@ -15,6 +15,7 @@ import {
   Pencil,
   Plus,
   Ruler,
+  Skull,
   Sliders,
   Swords,
   Trash2,
@@ -25,6 +26,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { VttBestiaryModal } from '../components/vtt/VttBestiaryModal';
 import { VttCanvas } from '../components/vtt/VttCanvas';
 import { VttCombatSidebar } from '../components/vtt/VttCombatSidebar';
 import { VttImportModal } from '../components/vtt/VttImportModal';
@@ -111,6 +113,7 @@ export const VttScreen: React.FC = () => {
 
   const { user: currentUser } = useAuthSession();
   const canUseGmModules = isGmOrAdmin(currentUser);
+  const isViewer = currentUser?.role === 'viewer';
 
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
@@ -118,6 +121,7 @@ export const VttScreen: React.FC = () => {
   );
 
   const [isNewTokenOpen, setIsNewTokenOpen] = useState(false);
+  const [isBestiaryOpen, setIsBestiaryOpen] = useState(false);
   const [importModal, setImportModal] = useState<{
     open: boolean;
     tab: 'characters' | 'encounter';
@@ -170,9 +174,10 @@ export const VttScreen: React.FC = () => {
       ) {
         return;
       }
-      if (isNewTokenOpen || importModal.open) return;
+      if (isNewTokenOpen || isBestiaryOpen || importModal.open) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (isViewer) return;
         e.preventDefault();
         undo();
         return;
@@ -191,19 +196,19 @@ export const VttScreen: React.FC = () => {
       } else if (key === '0') {
         e.preventDefault();
         requestCameraFocus(0, 0);
-      } else if (selectedTokenId && e.key === 'ArrowUp') {
+      } else if (!isViewer && selectedTokenId && e.key === 'ArrowUp') {
         e.preventDefault();
         stepSelectedToken(0, -1);
-      } else if (selectedTokenId && e.key === 'ArrowDown') {
+      } else if (!isViewer && selectedTokenId && e.key === 'ArrowDown') {
         e.preventDefault();
         stepSelectedToken(0, 1);
-      } else if (selectedTokenId && e.key === 'ArrowLeft') {
+      } else if (!isViewer && selectedTokenId && e.key === 'ArrowLeft') {
         e.preventDefault();
         stepSelectedToken(-1, 0);
-      } else if (selectedTokenId && e.key === 'ArrowRight') {
+      } else if (!isViewer && selectedTokenId && e.key === 'ArrowRight') {
         e.preventDefault();
         stepSelectedToken(1, 0);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenId) {
+      } else if (!isViewer && (e.key === 'Delete' || e.key === 'Backspace') && selectedTokenId) {
         e.preventDefault();
         deleteToken(selectedTokenId);
       }
@@ -213,7 +218,9 @@ export const VttScreen: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     isNewTokenOpen,
+    isBestiaryOpen,
     importModal.open,
+    isViewer,
     selectedTokenId,
     setActiveTool,
     requestCameraFocus,
@@ -285,7 +292,11 @@ export const VttScreen: React.FC = () => {
               <Layers className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
               <span className="truncate">{activeScene.name}</span>
               <span className="text-[10px] font-mono text-slate-400 tabular-nums shrink-0">
-                ({activeScene.tokens.length})
+                (
+                {canUseGmModules
+                  ? activeScene.tokens.length
+                  : activeScene.tokens.filter((t) => !t.hidden).length}
+                )
               </span>
             </button>
 
@@ -743,17 +754,29 @@ export const VttScreen: React.FC = () => {
                 <Compass className="w-3.5 h-3.5" />
                 <span className="hidden lg:inline">Encontro</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setIsBestiaryOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/35 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                title="Adicionar monstros do Bestiário D&D 5.5 (com opção de ocultar dos jogadores)"
+              >
+                <Skull className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Bestiário 5.5</span>
+              </button>
             </>
           )}
 
-          <button
-            type="button"
-            onClick={() => setIsNewTokenOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black flex items-center gap-1 transition cursor-pointer whitespace-nowrap shadow-md shadow-cyan-500/20"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Token</span>
-          </button>
+          {!isViewer && (
+            <button
+              type="button"
+              onClick={() => setIsNewTokenOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black flex items-center gap-1 transition cursor-pointer whitespace-nowrap shadow-md shadow-cyan-500/20"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Token</span>
+            </button>
+          )}
 
           {/* Desktop Right Sidebar Toggle */}
           <button
@@ -956,11 +979,17 @@ export const VttScreen: React.FC = () => {
       {/* Modals */}
       <VttTokenModal isOpen={isNewTokenOpen} onClose={() => setIsNewTokenOpen(false)} />
       {canUseGmModules && (
-        <VttImportModal
-          isOpen={importModal.open}
-          initialTab={importModal.tab}
-          onClose={() => setImportModal((prev) => ({ ...prev, open: false }))}
-        />
+        <>
+          <VttBestiaryModal
+            isOpen={isBestiaryOpen}
+            onClose={() => setIsBestiaryOpen(false)}
+          />
+          <VttImportModal
+            isOpen={importModal.open}
+            initialTab={importModal.tab}
+            onClose={() => setImportModal((prev) => ({ ...prev, open: false }))}
+          />
+        </>
       )}
     </div>
   );

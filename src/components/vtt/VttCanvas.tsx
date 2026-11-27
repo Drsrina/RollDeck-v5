@@ -1,5 +1,6 @@
 import { Compass, EyeOff, Lock, Plus, Shield, Swords, Users } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isGmOrAdmin, useAuthSession } from '../../lib/authSession';
 import {
   getHexPolygonPoints,
   getVisibleHexCenters,
@@ -68,6 +69,10 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
   onOpenImportCharacters,
   onOpenImportEncounter,
 }) => {
+  const { user: currentUser } = useAuthSession();
+  const canSeeHidden = isGmOrAdmin(currentUser);
+  const isViewer = currentUser?.role === 'viewer';
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState({ width: 1000, height: 680 });
 
@@ -329,9 +334,9 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
     if (e.button !== 0) return;
     e.stopPropagation();
 
-    if (token.locked) {
+    if (token.locked || isViewer) {
       // Immediately open Inspector for locked tokens so users can inspect or unlock in one click
-      selectToken(token.id, true);
+      selectToken(token.id, !isViewer);
       return;
     }
 
@@ -638,6 +643,7 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
 
         {/* 3. Tactical Tokens Layer */}
         {scene.tokens.map((token) => {
+          if (!canSeeHidden && token.hidden) return null;
           const isBeingDragged = dragToken?.tokenId === token.id;
           const posX = isBeingDragged ? dragToken.curX : token.x;
           const posY = isBeingDragged ? dragToken.curY : token.y;
@@ -956,6 +962,8 @@ export const VttCanvas: React.FC<VttCanvasProps> = ({
         <span>
           {grid.type === 'square' ? 'Quadrado' : grid.type === 'hex' ? 'Hexagonal' : 'Sem Grid'}
         </span>
+        <span aria-hidden="true" className="hidden sm:inline">·</span>
+        <span className="hidden sm:inline text-slate-500">[G] Rolar</span>
         <span aria-hidden="true">·</span>
         <span>{scene.tokens.length} {scene.tokens.length === 1 ? 'token' : 'tokens'}</span>
       </div>

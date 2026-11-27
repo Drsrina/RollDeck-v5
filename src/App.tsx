@@ -1,23 +1,48 @@
 import React, { useEffect, useMemo } from 'react';
 import { DiceRollAnimation } from './components/dice/DiceRollAnimation';
-import { FloatingDice3DOverlay } from './components/dice/FloatingDice3DOverlay';
 import { RollResultsModal } from './components/dice/RollResultsModal';
 import { BottomNav } from './components/navigation/BottomNav';
 import { DesktopSidebar } from './components/navigation/DesktopSidebar';
 import { TopBar } from './components/navigation/TopBar';
 import { playDiceRollSound } from './lib/audio';
-import { HistoryScreen } from './screens/HistoryScreen';
-import { LootScreen } from './screens/LootScreen';
-import { MapScreen } from './screens/MapScreen';
-import { PackagesScreen } from './screens/PackagesScreen';
-import { PlayerSheetsScreen } from './screens/PlayerSheetsScreen';
 import { RollScreen } from './screens/RollScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
-import { ForjaScreen } from './screens/ForjaScreen';
-import { OraculoScreen } from './screens/OraculoScreen';
-import { VttScreen } from './screens/VttScreen';
 import { DisclaimerTokenModal } from './components/auth/DisclaimerTokenModal';
 import { FloatingWindowsHost } from './components/map/FloatingWindowsHost';
+
+// Lazy loading de telas e Three.js para inicialização ultrarrápida do PWA (First Contentful Paint otimizado)
+const MapScreen = React.lazy(() => import('./screens/MapScreen').then((m) => ({ default: m.MapScreen })));
+const VttScreen = React.lazy(() => import('./screens/VttScreen').then((m) => ({ default: m.VttScreen })));
+const PlayerSheetsScreen = React.lazy(() =>
+  import('./screens/PlayerSheetsScreen').then((m) => ({ default: m.PlayerSheetsScreen }))
+);
+const PackagesScreen = React.lazy(() =>
+  import('./screens/PackagesScreen').then((m) => ({ default: m.PackagesScreen }))
+);
+const LootScreen = React.lazy(() => import('./screens/LootScreen').then((m) => ({ default: m.LootScreen })));
+const ForjaScreen = React.lazy(() => import('./screens/ForjaScreen').then((m) => ({ default: m.ForjaScreen })));
+const StudioScreen = React.lazy(() =>
+  import('./screens/StudioScreen').then((m) => ({ default: m.StudioScreen }))
+);
+const OraculoScreen = React.lazy(() => import('./screens/OraculoScreen').then((m) => ({ default: m.OraculoScreen })));
+const HistoryScreen = React.lazy(() => import('./screens/HistoryScreen').then((m) => ({ default: m.HistoryScreen })));
+const SettingsScreen = React.lazy(() =>
+  import('./screens/SettingsScreen').then((m) => ({ default: m.SettingsScreen }))
+);
+const FloatingDice3DOverlay = React.lazy(() =>
+  import('./components/dice/FloatingDice3DOverlay').then((m) => ({ default: m.FloatingDice3DOverlay }))
+);
+
+function ScreenLoadingFallback() {
+  return (
+    <div className="flex-1 w-full h-full min-h-[50vh] flex flex-col items-center justify-center p-8 text-slate-400 animate-in fade-in duration-200">
+      <div className="relative w-10 h-10 mb-4">
+        <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
+        <div className="absolute inset-2 rounded-full border border-purple-500/30 animate-pulse" />
+      </div>
+      <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Carregando módulo...</p>
+    </div>
+  );
+}
 import {
   canAccessTab,
   clearAuthSession,
@@ -26,6 +51,7 @@ import {
   setAuthSession,
   useAuthSession,
 } from './lib/authSession';
+import { pullConsolidatedStateFromServer, startConsolidatedServerSync } from './lib/serverSync';
 import { type ActiveTab, useAppStore } from './store/useAppStore';
 
 const ORDERED_TABS: readonly ActiveTab[] = [
@@ -37,6 +63,7 @@ const ORDERED_TABS: readonly ActiveTab[] = [
   'loot',
   'forja',
   'oraculo',
+  'studio',
   'history',
   'settings',
 ];
@@ -66,6 +93,13 @@ export default function App() {
   useEffect(() => {
     refreshFromDB();
   }, [refreshFromDB]);
+
+  // Sincroniza estado consolidado com o banco do servidor (PostgreSQL) ao autenticar
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated) return;
+    startConsolidatedServerSync();
+    pullConsolidatedStateFromServer().catch(() => {});
+  }, [isInitialized, isAuthenticated]);
 
   // Valida sessão em memória no servidor (sem persistir token em localStorage)
   useEffect(() => {
@@ -137,8 +171,12 @@ export default function App() {
         return;
       }
 
-      // Space to roll current tray (skip on VTT so Spacebar pans the tactical canvas cleanly)
-      if (e.code === 'Space' && !e.repeat && activeTab !== 'vtt') {
+      // G ou Shift+Espaço rola a bandeja em qualquer tela (inclusive no VTT); Espaço livre fora do VTT
+      const isRollKey =
+        (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey && !e.altKey) ||
+        (e.code === 'Space' && (e.shiftKey || activeTab !== 'vtt'));
+
+      if (isRollKey && !e.repeat) {
         const totalDice = tray.reduce((acc, t) => acc + t.count, 0);
         if (totalDice > 0 && !isRolling) {
           e.preventDefault();
@@ -223,37 +261,46 @@ export default function App() {
         {/* Mobile Top Application Bar (hidden on md+) */}
         <TopBar />
 
-        {/* Main View Area */}
+        {/* Main View Area com carregamento sob demanda */}
         <main className="flex-1 w-full flex flex-col overflow-hidden">
-          {(() => {
-            const effectiveTab: ActiveTab =
-              currentUser && !canAccessTab(currentUser, activeTab) ? 'roll' : activeTab;
+          <React.Suspense fallback={<ScreenLoadingFallback />}>
+            {(() => {
+              const effectiveTab: ActiveTab =
+                currentUser && !canAccessTab(currentUser, activeTab) ? 'roll' : activeTab;
 
-            if (effectiveTab === 'map' && canAccessTab(currentUser, 'map')) {
-              return <MapScreen />;
-            }
-            if (effectiveTab === 'vtt') {
-              return <VttScreen />;
-            }
-            return (
-              <div className="flex-1 w-full overflow-y-auto">
-                <div className="w-full max-w-lg md:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-2 md:py-6">
-                  {effectiveTab === 'roll' && <RollScreen />}
-                  {effectiveTab === 'sheets' && canAccessTab(currentUser, 'sheets') && (
-                    <PlayerSheetsScreen />
-                  )}
-                  {effectiveTab === 'packages' && <PackagesScreen />}
-                  {effectiveTab === 'loot' && canAccessTab(currentUser, 'loot') && <LootScreen />}
-                  {effectiveTab === 'forja' && canAccessTab(currentUser, 'forja') && <ForjaScreen />}
-                  {effectiveTab === 'oraculo' && canAccessTab(currentUser, 'oraculo') && (
-                    <OraculoScreen />
-                  )}
-                  {effectiveTab === 'history' && <HistoryScreen />}
-                  {effectiveTab === 'settings' && <SettingsScreen />}
+              if (effectiveTab === 'map' && canAccessTab(currentUser, 'map')) {
+                return <MapScreen />;
+              }
+              if (effectiveTab === 'vtt') {
+                return <VttScreen />;
+              }
+              if (effectiveTab === 'studio' && canAccessTab(currentUser, 'studio')) {
+                return (
+                  <div className="flex-1 w-full h-full overflow-hidden">
+                    <StudioScreen />
+                  </div>
+                );
+              }
+              return (
+                <div className="flex-1 w-full overflow-y-auto">
+                  <div className="w-full max-w-lg md:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-2 md:py-6">
+                    {effectiveTab === 'roll' && <RollScreen />}
+                    {effectiveTab === 'sheets' && canAccessTab(currentUser, 'sheets') && (
+                      <PlayerSheetsScreen />
+                    )}
+                    {effectiveTab === 'packages' && <PackagesScreen />}
+                    {effectiveTab === 'loot' && canAccessTab(currentUser, 'loot') && <LootScreen />}
+                    {effectiveTab === 'forja' && canAccessTab(currentUser, 'forja') && <ForjaScreen />}
+                    {effectiveTab === 'oraculo' && canAccessTab(currentUser, 'oraculo') && (
+                      <OraculoScreen />
+                    )}
+                    {effectiveTab === 'history' && <HistoryScreen />}
+                    {effectiveTab === 'settings' && <SettingsScreen />}
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
+          </React.Suspense>
         </main>
 
         {/* Mobile Bottom Thumb Navigation Bar (hidden on md+) */}
@@ -283,7 +330,11 @@ export default function App() {
       {isAuthenticated && isGmOrAdmin(currentUser) && <FloatingWindowsHost />}
 
       {/* Dados 3D Interativos Persistentes em todas as abas (ligável/desligável na Mesa de Rolagem) */}
-      {isAuthenticated && settings.dice3DEnabled !== false && <FloatingDice3DOverlay />}
+      {isAuthenticated && settings.dice3DEnabled !== false && (
+        <React.Suspense fallback={null}>
+          <FloatingDice3DOverlay />
+        </React.Suspense>
+      )}
     </div>
   );
 }

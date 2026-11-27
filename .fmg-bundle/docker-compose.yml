@@ -1,0 +1,55 @@
+services:
+  # 1. Azgaar's Fantasy Map Generator (Web App Principal)
+  fantasy-map-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fantasy-map-generator
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+  # 2. Armoria (Gerador e Editor de Brasões e Heráldica)
+  armoria:
+    build:
+      context: ./.1implementacoes/Armoria
+      dockerfile: Dockerfile
+    container_name: armoria-heraldry
+    ports:
+      - "8081:5173"
+    restart: unless-stopped
+
+  # 3. Medieval Fantasy City Generator (Watabou)
+  town-generator:
+    build:
+      context: ./.1implementacoes/TownGeneratorOS
+      dockerfile: Dockerfile
+    container_name: town-generator
+    ports:
+      - "8082:80"
+    restart: unless-stopped
+
+  # 4. Conversor FMG -> Obsidian Markdown
+  obsidian-converter:
+    build:
+      context: ./.1implementacoes/azgaarfmg-to-obsidianmd
+      dockerfile: Dockerfile
+    container_name: fmg-obsidian-converter
+    volumes:
+      - ./dados_mapas:/data/input
+      - ./meu_obsidian_vault:/data/vault
+    environment:
+      - WATCH=true
+      - WATCH_INTERVAL=5000
+    restart: unless-stopped
+
+  # 5. SilverBullet (Visualizador e Editor de Notas Markdown no Navegador)
+  silverbullet:
+    image: zefhemel/silverbullet:latest
+    container_name: silverbullet-notes
+    ports:
+      - "8083:3000"
+    volumes:
+      - ./silverbullet_data:/data
+      - ./meu_obsidian_vault:/space
+    restart: unless-stopped

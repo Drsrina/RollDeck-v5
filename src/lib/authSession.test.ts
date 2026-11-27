@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { createDefaultSidekickSheet } from './characterSheet';
 import {
   canAccessTab,
+  clearAuthSession,
   GM_ONLY_TABS,
   isGmOrAdmin,
   PLAYER_ONLY_TABS,
+  setAuthSession,
   type AppTabId,
   type AuthUser,
   type UserRole,
 } from './authSession';
+import { useAppStore } from '../store/useAppStore';
 
 function makeUser(role: UserRole): AuthUser {
   const now = Date.now();
@@ -45,7 +48,7 @@ describe('RBAC de módulos RollDeck (canAccessTab & isGmOrAdmin)', () => {
     }
   });
 
-  it('bloqueia Forja de Mundos, Mapa de Notas, Oráculo e Geradores de Loot para jogador e observador', () => {
+  it('bloqueia Forja de Mundos, Estúdio de Criação, Mapa de Notas, Oráculo e Geradores de Loot para jogador e observador', () => {
     const player = makeUser('player');
     const viewer = makeUser('viewer');
 
@@ -53,7 +56,7 @@ describe('RBAC de módulos RollDeck (canAccessTab & isGmOrAdmin)', () => {
     expect(isGmOrAdmin(viewer)).toBe(false);
     expect(isGmOrAdmin(null)).toBe(false);
 
-    for (const restrictedTab of ['forja', 'map', 'oraculo', 'loot'] as AppTabId[]) {
+    for (const restrictedTab of ['forja', 'map', 'oraculo', 'loot', 'studio'] as AppTabId[]) {
       expect(canAccessTab(player, restrictedTab)).toBe(false);
       expect(canAccessTab(viewer, restrictedTab)).toBe(false);
       expect(canAccessTab(null, restrictedTab)).toBe(false);
@@ -68,6 +71,31 @@ describe('RBAC de módulos RollDeck (canAccessTab & isGmOrAdmin)', () => {
     expect(canAccessTab(player, 'sheets')).toBe(true);
     expect(canAccessTab(viewer, 'sheets')).toBe(false);
     expect(canAccessTab(null, 'sheets')).toBe(false);
+  });
+
+  it('impede setActiveTab e openStudioTool para Estúdio quando usuário é jogador, observador ou não autenticado', () => {
+    useAppStore.setState({ activeTab: 'roll' });
+
+    clearAuthSession();
+    useAppStore.getState().setActiveTab('studio');
+    expect(useAppStore.getState().activeTab).toBe('roll');
+    useAppStore.getState().openStudioTool('city');
+    expect(useAppStore.getState().activeTab).toBe('roll');
+
+    setAuthSession('tok-player', makeUser('player'));
+    useAppStore.getState().setActiveTab('studio');
+    expect(useAppStore.getState().activeTab).toBe('roll');
+
+    setAuthSession('tok-viewer', makeUser('viewer'));
+    useAppStore.getState().openStudioTool('heraldry');
+    expect(useAppStore.getState().activeTab).toBe('roll');
+
+    setAuthSession('tok-gm', makeUser('gm'));
+    useAppStore.getState().openStudioTool('city');
+    expect(useAppStore.getState().activeTab).toBe('studio');
+
+    clearAuthSession();
+    useAppStore.setState({ activeTab: 'roll' });
   });
 
   it('gera presets válidos de fichas de sidekick para todos os papéis', () => {

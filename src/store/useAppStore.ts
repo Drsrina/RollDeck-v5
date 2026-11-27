@@ -44,6 +44,7 @@ export type ActiveTab =
   | 'loot'
   | 'forja'
   | 'oraculo'
+  | 'studio'
   | 'history'
   | 'settings';
 
@@ -87,6 +88,9 @@ interface AppState {
   isInitialized: boolean;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  studioInitialTool?: 'city' | 'heraldry' | 'world' | 'notes';
+  setStudioInitialTool: (tool: 'city' | 'heraldry' | 'world' | 'notes') => void;
+  openStudioTool: (tool: 'city' | 'heraldry' | 'world' | 'notes') => void;
 
   // Sidebar & Navigation layout state
   isSidebarCollapsed: boolean;
@@ -169,10 +173,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTab: 'roll',
   setActiveTab: (tab) => {
     const user = getAuthUser();
-    if (user && !canAccessTab(user, tab)) {
+    if (!canAccessTab(user, tab)) {
       return;
     }
     set({ activeTab: tab });
+  },
+  studioInitialTool: undefined,
+  setStudioInitialTool: (tool) => set({ studioInitialTool: tool }),
+  openStudioTool: (tool) => {
+    const user = getAuthUser();
+    if (!canAccessTab(user, 'studio')) {
+      return;
+    }
+    set({ studioInitialTool: tool, activeTab: 'studio' });
   },
 
   isSidebarCollapsed: false,

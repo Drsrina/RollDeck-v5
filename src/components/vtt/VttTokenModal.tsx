@@ -1,5 +1,6 @@
-import { ImagePlus, Plus, Shield, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, ImagePlus, Plus, Shield, Trash2, X } from 'lucide-react';
 import React, { useRef, useState } from 'react';
+import { isGmOrAdmin, useAuthSession } from '../../lib/authSession';
 import { useVttStore } from '../../store/useVttStore';
 import {
   VTT_FACTION_META,
@@ -56,6 +57,8 @@ async function compressTokenAvatar(file: File): Promise<string> {
 
 export const VttTokenModal: React.FC<VttTokenModalProps> = ({ isOpen, onClose }) => {
   const addToken = useVttStore((s) => s.addToken);
+  const { user: currentUser } = useAuthSession();
+  const isGm = isGmOrAdmin(currentUser);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [name, setName] = useState('');
@@ -67,6 +70,7 @@ export const VttTokenModal: React.FC<VttTokenModalProps> = ({ isOpen, onClose })
   const [initiativeMod, setInitiativeMod] = useState<number>(2);
   const [speed, setSpeed] = useState<string>('9m');
   const [notes, setNotes] = useState<string>('');
+  const [hidden, setHidden] = useState<boolean>(false);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
@@ -100,6 +104,7 @@ export const VttTokenModal: React.FC<VttTokenModalProps> = ({ isOpen, onClose })
     setInitiativeMod(2);
     setSpeed('9m');
     setNotes('');
+    setHidden(false);
     setAvatarUrl(undefined);
     setAvatarError(null);
   };
@@ -117,7 +122,7 @@ export const VttTokenModal: React.FC<VttTokenModalProps> = ({ isOpen, onClose })
       sizeCells,
       rotation: 0,
       locked: false,
-      hidden: false,
+      hidden: isGm ? hidden : false,
       hpCurrent: safeMax,
       hpMax: safeMax,
       hpTemp: 0,
@@ -391,6 +396,23 @@ export const VttTokenModal: React.FC<VttTokenModalProps> = ({ isOpen, onClose })
               className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 resize-none"
             />
           </div>
+
+          {isGm && (
+            <button
+              type="button"
+              onClick={() => setHidden((v) => !v)}
+              className={`w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                hidden
+                  ? 'bg-purple-500/20 border-purple-400/45 text-purple-200'
+                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+              }`}
+            >
+              {hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <span>
+                {hidden ? 'Criar oculto dos jogadores' : 'Visível para todos na mesa'}
+              </span>
+            </button>
+          )}
 
           {/* Footer */}
           <div className="pt-2 border-t border-white/10 flex items-center justify-end gap-2">

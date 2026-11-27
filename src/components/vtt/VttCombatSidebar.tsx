@@ -124,6 +124,7 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
   const soundEnabled = useAppStore((s) => s.settings.soundEnabled);
   const { user: currentUser } = useAuthSession();
   const canSyncSheet = isGmOrAdmin(currentUser);
+  const isViewer = currentUser?.role === 'viewer';
 
   const [hpInput, setHpInput] = useState('5');
   const [syncedFeedback, setSyncedFeedback] = useState(false);
@@ -134,15 +135,20 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
   const [newAtkDamage, setNewAtkDamage] = useState('1d8+2');
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
+  const visibleTokens = React.useMemo(
+    () => (canSyncSheet ? scene.tokens : scene.tokens.filter((t) => !t.hidden)),
+    [canSyncSheet, scene.tokens]
+  );
+
   const selectedToken: VttToken | null =
-    scene.tokens.find((t) => t.id === selectedTokenId) || null;
+    visibleTokens.find((t) => t.id === selectedTokenId) || null;
 
   const orderedCombatants = scene.combat.order
-    .map((id) => scene.tokens.find((t) => t.id === id))
+    .map((id) => visibleTokens.find((t) => t.id === id))
     .filter((t): t is VttToken => Boolean(t));
 
   // Include any non-object tokens not yet in combat.order
-  const unorderedCombatants = scene.tokens.filter(
+  const unorderedCombatants = visibleTokens.filter(
     (t) => t.faction !== 'object' && !scene.combat.order.includes(t.id)
   );
   const combatList = [...orderedCombatants, ...unorderedCombatants];
@@ -557,6 +563,7 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
               </div>
 
               {/* Action Utilities Row */}
+              {!isViewer && (
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
@@ -571,18 +578,20 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                   <span>{selectedToken.locked ? 'Travado' : 'Livre'}</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => updateToken(selectedToken.id, { hidden: !selectedToken.hidden })}
-                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 cursor-pointer ${
-                    selectedToken.hidden
-                      ? 'bg-purple-500/20 border-purple-400/40 text-purple-200'
-                      : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
-                  }`}
-                >
-                  {selectedToken.hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                  <span>{selectedToken.hidden ? 'Oculto' : 'Visível'}</span>
-                </button>
+                {canSyncSheet && (
+                  <button
+                    type="button"
+                    onClick={() => updateToken(selectedToken.id, { hidden: !selectedToken.hidden })}
+                    className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 cursor-pointer ${
+                      selectedToken.hidden
+                        ? 'bg-purple-500/20 border-purple-400/40 text-purple-200'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {selectedToken.hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    <span>{selectedToken.hidden ? 'Oculto' : 'Visível'}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -602,6 +611,7 @@ export const VttCombatSidebar: React.FC<VttCombatSidebarProps> = ({ scene, onClo
                   <span>Excluir</span>
                 </button>
               </div>
+              )}
 
               {/* Character Sheet Sync Banner (somente Mestre/Admin) */}
               {selectedToken.sourceNoteId && canSyncSheet && (

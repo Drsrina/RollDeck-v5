@@ -24,6 +24,7 @@ import {
   saveNotes as dbSaveNotes,
 } from '../db/indexedDB';
 import { createDefaultCharacterSheet } from '../lib/characterSheet';
+import { convertFmgJsonToRollDeckNotes, type FmgImportOptions, type FmgImportResult } from '../lib/fmgImporter';
 import { createStyleFromPreset } from '../lib/mapDrawing';
 import { renameWikiLinksInText, syncLinksFromNoteBody } from '../lib/wikiLinks';
 import type {
@@ -200,6 +201,9 @@ interface MapStoreState {
   pushHistorySnapshot: () => void;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
+
+  // FMG / Obsidian Import
+  importFmgWorldToCanvas: (fmgData: any, options?: FmgImportOptions) => Promise<FmgImportResult>;
 
   // Initialization
   setInitialData: (data: {
@@ -1167,5 +1171,44 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
         ? state.drawingStyle
         : createStyleFromPreset(state.drawingStyle.preset, defaultLayer?.color),
     }));
+  },
+
+  importFmgWorldToCanvas: async (fmgData, options) => {
+    get().pushHistorySnapshot();
+    const result = convertFmgJsonToRollDeckNotes(fmgData, options);
+    const { notes: existingNotes, links: existingLinks } = get();
+
+    // Mesclar notas evitando títulos duplicados
+    const existingTitles = new Set(existingNotes.map((n) => n.title.toLowerCase().trim()));
+    const newNotesOnly = result.notes.filter(
+      (n) => !existingTitles.has(n.title.toLowerCase().trim())
+    );
+
+    const mergedNotes = [...existingNotes, ...newNotesOnly];
+
+    // Sincronizar todos os links de wiki gerados
+    let allLinks = [...existingLinks];
+    for (const note of mergedNotes) {
+      allLinks = syncLinksFromNoteBody(note.id, note.body, mergedNotes, allLinks);
+    }
+
+    if (typeof indexedDB !== 'undefined') {
+      if (newNotesOnly.length > 0) {
+        await dbSaveNotes(newNotesOnly).catch(() => {});
+      }
+      await dbReplaceAllLinks(allLinks).catch(() => {});
+    }
+    rebuildSearchIndex(mergedNotes);
+
+    set({
+      notes: mergedNotes,
+      links: allLinks,
+    });
+
+    if (newNotesOnly.length > 0) {
+      get().focusCameraOn(newNotesOnly[0].x, newNotesOnly[0].y, 0.85);
+    }
+
+    return result;
   },
 }));

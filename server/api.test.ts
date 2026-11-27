@@ -989,6 +989,13 @@ describe('RollDeck REST API v1 — Usuários, RBAC, Chaves Externas, CRUD & Moto
     }).then((r) => r.json());
     expect(fenrirAfterDelete.masterCharacterId).toBeUndefined();
   });
+
+  it('serve a aplicação estática interna do Watabou City Generator em /apps/city-generator', async () => {
+    const res = await fetch(`${baseUrl}/apps/city-generator/index.html`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('html');
+  });
 });
 
 

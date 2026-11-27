@@ -1,0 +1,144 @@
+services:
+  # ==============================================================
+  # 0. Banco de Dados Consolidado (PostgreSQL 16)
+  # ==============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: rolldeck-v5-db
+    environment:
+      - POSTGRES_USER=rolldeck
+      - POSTGRES_PASSWORD=rolldeck_secret
+      - POSTGRES_DB=rolldeck
+    volumes:
+      - rolldeck_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rolldeck -d rolldeck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+  # ==============================================================
+  # 1. RollDeck v5 (Aplicação Principal, VTT, Forja, Oráculo & API)
+  # ==============================================================
+  rolldeck:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rolldeck-app
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://rolldeck:rolldeck_secret@postgres:5432/rolldeck
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080,http://localhost:8081,http://localhost:8082,http://localhost:8083
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fantasy-map-generator:
+        condition: service_started
+      armoria:
+        condition: service_started
+      town-generator:
+        condition: service_started
+
+  # ==============================================================
+  # 2. Azgaar's Fantasy Map Generator (Gerador Continental de Mundos)
+  # ==============================================================
+  fantasy-map-generator:
+    build:
+      context: ./.fmg-bundle
+      dockerfile: Dockerfile
+    container_name: fantasy-map-generator
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+  # ==============================================================
+  # 3. Armoria (Gerador e Editor Vetorial de Heráldica & Brasões)
+  # ==============================================================
+  armoria:
+    build:
+      context: ./.fmg-bundle/.1implementacoes/Armoria
+      dockerfile: Dockerfile
+    container_name: armoria-heraldry
+    ports:
+      - "8081:5173"
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+  # ==============================================================
+  # 4. Watabou Medieval Fantasy City Generator (Plantas Baixas Urbanas)
+  # ==============================================================
+  town-generator:
+    build:
+      context: ./.fmg-bundle/.1implementacoes/TownGeneratorOS
+      dockerfile: Dockerfile
+    container_name: town-generator
+    ports:
+      - "8082:80"
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+  # ==============================================================
+  # 5. Conversor Automatizado FMG ➔ Obsidian Markdown Vault
+  # ==============================================================
+  obsidian-converter:
+    build:
+      context: ./.fmg-bundle/.1implementacoes/azgaarfmg-to-obsidianmd
+      dockerfile: Dockerfile
+    container_name: fmg-obsidian-converter
+    volumes:
+      - ./.fmg-bundle/dados_mapas:/data/input
+      - ./.fmg-bundle/meu_obsidian_vault:/data/vault
+    environment:
+      - WATCH=true
+      - WATCH_INTERVAL=5000
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+  # ==============================================================
+  # 6. SilverBullet (Editor e Visualizador de Notas Markdown no Navegador)
+  # ==============================================================
+  silverbullet:
+    image: zefhemel/silverbullet:latest
+    container_name: silverbullet-notes
+    volumes:
+      - ./.fmg-bundle/silverbullet_data:/data
+      - ./.fmg-bundle/meu_obsidian_vault:/space
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+  silverbullet-proxy:
+    image: nginx:alpine
+    container_name: silverbullet-proxy
+    ports:
+      - "8083:80"
+    volumes:
+      - ./docker/silverbullet-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - silverbullet
+    restart: unless-stopped
+    networks:
+      - rolldeck-network
+
+networks:
+  rolldeck-network:
+    driver: bridge
+
+volumes:
+  rolldeck_pgdata:

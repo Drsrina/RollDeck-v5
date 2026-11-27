@@ -67,10 +67,11 @@ export type AppTabId =
   | 'loot'
   | 'forja'
   | 'oraculo'
+  | 'studio'
   | 'history'
   | 'settings';
 
-export const GM_ONLY_TABS: readonly AppTabId[] = ['forja', 'map', 'oraculo', 'loot'] as const;
+export const GM_ONLY_TABS: readonly AppTabId[] = ['forja', 'map', 'oraculo', 'loot', 'studio'] as const;
 
 export const PLAYER_ONLY_TABS: readonly AppTabId[] = ['sheets'] as const;
 

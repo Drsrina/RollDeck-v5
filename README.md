@@ -1,116 +1,190 @@
-# RollDeck — Estúdio TTRPG Offline-First & API REST
+# RollDeck v5 — Estúdio TTRPG Offline-First & Suíte Cartográfica Unificada
 
-O **RollDeck** é uma suíte completa para mesas de RPG de mesa (TTRPG), projetada com foco *mobile-first*, funcionamento 100% offline via IndexedDB + PWA e servidor Express integrado com autenticação local, RBAC e API REST documentada em OpenAPI 3.1.
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-brightgreen.svg)](https://nodejs.org)
+[![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-8-purple.svg)](https://vitejs.dev)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://www.docker.com)
+[![PWA](https://img.shields.io/badge/PWA-100%25%20Offline-orange.svg)](https://web.dev/progressive-web-apps/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
----
+O **RollDeck v5** é uma suíte completa e modular para mestres e jogadores de RPG de mesa (TTRPG). Projetado com foco *mobile-first*, arquitetura *offline-first* via **IndexedDB + PWA** e servidor **Express/TypeScript** com controle de acesso RBAC, chave de API externa (`rdk_...`) e REST API documentada em OpenAPI 3.1.
 
-## Principais Módulos
-
-### 1. Rolador de Dados & Pacotes
-- Dados padrão (`d4`, `d6`, `d8`, `d10`, `d12`, `d20`, `d100`) e dados customizados (incluindo faces de texto/Fate).
-- Bandeja rápida, modificadores globais, vantagem/desvantagem, *keep highest/lowest* e rerrolagem de `1`.
-- Pacotes favoritos organizáveis por categorias (Combate, Magias, Perícias, Geral) com histórico pesquisável e rolagens fixáveis.
-- Feedback tátil (haptics), efeitos sonoros sintetizados e suporte a atalhos de teclado (`1`–`8` para navegar entre telas).
-
-### 2. Mapa de Notas & Cartografia Interativa
-- **Canvas infinito 60fps** com zoom/pan suave, LOD automático (orbes, badges e cartões detalhados), minimapa sincronizado, modo de física/gravidade de nós conectados (`d3-force`), Snap-to-Grid (`20px`) e **Modo Foco de Vizinhança**.
-- **Fichas de Personagem integradas:** categoria dedicada `Ficha de Personagem` com criação rápida no mapa, retrato, raça/classe/nível, barra interativa de PV (`-5/-1/+1/+5` + PV temp), CA, iniciativa, atributos com cálculo automático de modificadores e salvaguardas, perícias, ataques, condições e inventário. Clique em qualquer atributo, perícia, iniciativa ou ataque para rolar direto no RollDeck.
-- **Conexões & Wiki-Links:** suporte a `[[Nome da Nota]]` e `[[Nota|Rótulo]]` com autocomplete, atualização automática de referências ao renomear notas, backlinks clicáveis, links manuais estilizados (cor, tracejado, direção) e linha-guia dinâmica ao conectar nós.
-- **Editor Markdown & Janelas Flutuantes:** prévia Markdown rica com checklists interativos, imagens e links clicáveis; qualquer nota ou ficha pode ser desacoplada em janela flutuante redimensionável que permanece aberta ao navegar por todo o app.
-- **Desenho Vetorial SVG:** caneta livre com presets cartográficos (Livre, Rio, Trilha, Parede), gizmo interativo para mover/redimensionar/girar, controle de cor/espessura/opacidade/curva, integração com camadas e Undo/Redo (`Ctrl+Z` / `Ctrl+Y`).
-- **Camadas, Molduras e Mapas de Fundo:** controle de visibilidade e bloqueio por camada, molduras de região arrastáveis/redimensionáveis/renomeáveis e múltiplas imagens/tokens posicionáveis no canvas.
-
-### 3. Forja de Mundos & Gerador de Encontros
-- Geração procedural determinística por *seed* (reprodutível): continentes/terreno, assentamentos (aldeia, vila, cidade com distritos e facções), masmorras (Donjon, BSP, Caverna), NPCs, itens e rumores.
-- **Gerador de Encontros d20 / D&D 5.5 (2024):** orçamento de XP por nível e tamanho do grupo, dificuldades (Baixa, Moderada, Alta/Mortal), ambientes temáticos, composição tática de criaturas, tesouro sugerido e envio direto para o Mapa de Notas.
-
-### 4. Gerador de Loot
-- Tabelas customizáveis com múltiplos tipos de coluna (texto, números, moeda, fórmulas de dados, seleções), bloqueio de itens individuais, histórico de gerações e integração com o mapa.
-
-### 5. Oráculo & Gestão de Campanha
-- Oráculo Sim/Não determinístico com probabilidades, modificadores e eventos aleatórios.
-- Tabelas de campanha (clima, rumores, complicações, comércio, desastres sazonais, NPCs rápidos), controlador de turnos, ficha de cidade e diário de campanha.
-
-### 6. Integrações, Backup & Exportação
-- **Obsidian:** importação de arquivos `.md` (com frontmatter YAML, `#tags`, `[[wiki-links]]` e detecção automática de categorias como fichas, NPCs e locais) e exportação completa do mapa em `.zip` de arquivos Markdown.
-- **Notion:** busca e importação de páginas e databases diretamente pelo servidor (via `NOTION_API_KEY`) convertendo blocos e menções em notas e conexões no mapa.
-- **Backup JSON:** exportação e importação validada com Zod nos modos *substituir* ou *mesclar*.
+Na versão 5.0, o RollDeck integra nativamente o ecossistema **`.fmg-bundle`**, transformando-se em um **Estúdio de Criação Unificado** para cidades, brasões heráldicos, mapas continentais e notas Markdown integradas por `[[Wiki-links]]`.
 
 ---
 
-## Stack Tecnológica
+## 🏛️ Arquitetura Unificada de Containers (Docker)
 
-- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, Zustand, Motion, Lucide Icons, D3-Force, MiniSearch, IndexedDB (`idb`), JSZip, `vite-plugin-pwa`.
-- **Backend:** Node.js, Express 4, Zod v4, TypeScript (`tsx`).
-- **Testes:** Vitest.
+O RollDeck orquestra **6 serviços independentes e interoperáveis** através do [`docker-compose.yml`](file:///e:/Code/RollDeck-v5/docker-compose.yml):
+
+```
+                       ┌───────────────────────────────┐
+                       │     RollDeck v5 Principal     │
+                       │     http://localhost:3000     │
+                       │ (VTT, Forja, Canvas, Oráculo) │
+                       └──────────────┬────────────────┘
+                                      │
+       ┌──────────────────────────────┼──────────────────────────────┐
+       │                              │                              │
+┌──────▼──────────────┐   ┌───────────▼─────────────┐   ┌────────────▼────────────┐
+│ Azgaar FMG (Mundos) │   │    Armoria (Heráldica)  │   │  Watabou City Generator │
+│http://localhost:8080│   │  http://localhost:8081  │   │  http://localhost:8082  │
+└─────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
+       │                                                             │
+       │ (.json / .svg)                                              │ (plantas baixas)
+       ▼                                                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│           Pipeline FMG ➔ Obsidian ➔ RollDeck ([[Wiki-links]])           │
+│      SilverBullet Notes (http://localhost:8083) | Vault Compartilhado    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Mapa de Serviços & Portas
+
+| Serviço | Porta Local | Container | Função |
+|---|---|---|---|
+| **RollDeck v5** | `http://localhost:3000` | `rolldeck-app` | Aplicação central, VTT, Canvas, Forja, API REST v1 e PWA |
+| **Fantasy Map Generator** | `http://localhost:8080` | `fantasy-map-generator` | Simulação cartográfica de continentes, relevo 3D e biomas |
+| **Armoria Heráldica** | `http://localhost:8081` | `armoria-heraldry` | Criação vetorial de brasões para facções, ordens e fichas |
+| **Town Generator** | `http://localhost:8082` | `town-generator` | Geração procedural de plantas baixas urbanas medievais |
+| **SilverBullet Notes** | `http://localhost:8083` | `silverbullet-notes` | Visualizador e editor de notas Markdown do Vault |
+| **FMG ➔ Obsidian** | *Daemon interno* | `fmg-obsidian-converter` | Sincronizador de arquivos `.json` do FMG em notas Markdown |
 
 ---
 
-## Como Executar Localmente
+## 🎲 Módulos Principais do RollDeck
 
-### Pré-requisitos
-- Node.js 20+ (ou Bun)
+### 1. Estúdio de Criação Integrado (`StudioScreen`)
+- **Watabou Medieval Fantasy City Generator:** Servido de forma nativa e estática em `/apps/city-generator`, permitindo gerar cidades, muralhas e castelos com download em PNG/SVG.
+- **Armoria Heráldica & Brasões:** Criação de escudos com alternador de fonte (🌐 Nuvem Oficial Vercel ou 💻 Container Docker Local :8081).
+- **Cofre de Heráldica:** Banco de dados de brasões no RollDeck com sanitização de segurança anti-XSS ([svgSanitizer.ts](file:///e:/Code/RollDeck-v5/src/lib/svgSanitizer.ts)), vinculação direta aos cards de facções da Forja e fichas de personagens.
+- **Azgaar's Fantasy Map Generator (FMG):** Geração continental com envio com 1 clique para o VTT (como fundo de cena) e para o Canvas do MapScreen.
+- **SilverBullet Notes:** Acesso direto ao editor de notas Markdown conectado ao vault de campanha na porta 8083.
+- **Pipeline FMG ➔ Wiki-links:** Upload de arquivos `.json` do FMG para gerar automaticamente redes de nós de Reinos, Cidades e Culturas com conexões visuais `[[Wiki-links]]`.
+- **Exportador Obsidian Vault:** Exportação das notas do RollDeck em Markdown consolidado com frontmatter YAML ([obsidianExporter.ts](file:///e:/Code/RollDeck-v5/src/lib/obsidianExporter.ts)).
 
-### Instalação e Execução
+### 2. Mapa Mental & Cartografia Interativa (`MapScreen`)
+- **Canvas infinito a 60fps** com zoom/pan suave, simulação de gravidade/física (`d3-force`), Snap-to-Grid (`20px`) e Modo Foco de Vizinhança.
+- **Conexões & [[Wiki-links]]:** Suporte completo à sintaxe `[[Nome da Nota]]` e `[[Nota|Rótulo]]` com sincronização automática de arestas visuais.
+- **Fichas de Personagem no Canvas:** Atributos D&D 5e/5.5 com rolagens ao clicar, controle de PV/PV temporário, CA, iniciativa, ataques e inventário.
+- **Desenho Vetorial SVG:** Caneta cartográfica (Livre, Rio, Trilha, Parede), gizmo de transformação, camadas e histórico de Undo/Redo.
+- **Janelas Flutuantes:** Desacople qualquer nota ou ficha para uma janela flutuante arrastável que persiste entre telas.
+
+### 3. Virtual Tabletop Tático (`VttScreen`)
+- Tabuleiro tático com suporte a grids Quadrado e Hexagonal.
+- Envio instantâneo de mapas do FMG e Forja como imagem de fundo de alta resolução.
+- Gerenciamento de combate, iniciativa, condições de status e efeitos climáticos dinâmicos (chuva, neve, névoa, brasas, relâmpago).
+- Rolador 3D transparente flutuante integrado ao grid.
+
+### 4. Forja de Mundos Procedural (`ForjaScreen`)
+- Arquitetura modularizada em 9 abas de domínio:
+  - **Mundo:** Síntese continental, placas tectônicas e atalho direto para o Estúdio FMG.
+  - **Assentamento:** Aldeias, vilas e cidades com distritos, POIs e facções integradas aos brasões do Armoria.
+  - **Terreno:** Malhas poligonais de Voronoi e bacias hidrográficas.
+  - **Masmorra:** Donjon, salas BSP e labirintos celulares.
+  - **NPCs:** Nomes gerados por cadeias de Markov, motivações, segredos e traços de personalidade.
+  - **Itens & Tesouros:** Armas, relíquias e tabelas de saque.
+  - **Markov:** Treinamento procedural de nomes por culturas.
+  - **Fantasia:** Níveis de magia e ganchos cósmicos.
+  - **Sessão ao Vivo:** Gerador de encontros D&D 5.5 (2024) com envio direto para o VTT.
+
+### 5. Rolador de Dados & Pacotes (`RollScreen`)
+- Suporte a dados poliédricos padrão (`d4`, `d6`, `d8`, `d10`, `d12`, `d20`, `d100`) e dados customizados.
+- Dados 3D realistas renderizados via Three.js.
+- Pacotes salvos, vantagens/desvantagens, keep highest/lowest e rerrolagem de 1s.
+- Atalhos de teclado globais (`1` a `9` para alternar telas, `Ctrl+Z` para desfazer).
+
+### 6. Oráculo de Campanha & Gestão de Turnos (`OraculoScreen`)
+- Oráculo Sim/Não com probabilidades ajustáveis e eventos inesperados.
+- Tabelas determinísticas de clima, rumores, complicações de viagem e encontros sazonais.
+
+---
+
+## 🚀 Como Iniciar
+
+### Opção A: Execução Unificada via Docker (Recomendada)
+Para rodar toda a suíte (RollDeck + FMG + Armoria + Watabou + SilverBullet):
+
 ```bash
+# 1. Iniciar todos os serviços em segundo plano
+npm run docker:up
+# ou: docker compose up -d
+
+# 2. Acessar no navegador:
+# RollDeck:      http://localhost:3000
+# Azgaar FMG:    http://localhost:8080
+# Armoria:       http://localhost:8081
+# TownGen:       http://localhost:8082
+# SilverBullet:  http://localhost:8083
+
+# 3. Acompanhar os logs
+npm run docker:logs
+
+# 4. Parar todos os serviços
+npm run docker:down
+```
+
+### Opção B: Execução Local em Desenvolvimento (Node.js)
+Caso prefira rodar apenas o RollDeck diretamente na sua máquina:
+
+```bash
+# 1. Instalar dependências
 npm install
+
+# 2. Iniciar o servidor em desenvolvimento (Express + Vite)
 npm run dev
+
+# 3. Acessar em http://localhost:3000
 ```
 
-O servidor inicia na porta **`3000`** (`http://localhost:3000`), servindo simultaneamente o frontend React e a API REST `/api/*`.
+---
 
-### Scripts Disponíveis
+## 📜 Scripts do `package.json`
+
 | Comando | Descrição |
-| :--- | :--- |
-| `npm run dev` | Inicia o servidor Express + Vite em modo desenvolvimento na porta 3000 |
-| `npm run build` | Compila o bundle de produção em `dist/` |
-| `npm run start` | Inicia o servidor em modo produção (`tsx server.ts`) |
-| `npm run lint` | Executa checagem de tipos TypeScript (`tsc --noEmit`) |
-| `npm run test` | Executa toda a suíte de testes unitários e de API (`vitest run`) |
+|---|---|
+| `npm run dev` | Inicia servidor Express + Vite em desenvolvimento (`http://localhost:3000`) |
+| `npm run build` | Compila o frontend React em `dist/` com PWA Service Worker |
+| `npm run start` | Inicia o servidor em produção (`tsx server.ts`) |
+| `npm run lint` | Checagem de tipos TypeScript rigorosa (`tsc --noEmit`) |
+| `npm run test` | Executa a suíte de 101 testes automatizados com Vitest (`vitest run`) |
+| `npm run docker:up` | Sobe todos os 6 containers da suíte em segundo plano |
+| `npm run docker:down` | Encerra os containers do Docker Compose |
+| `npm run docker:build`| Reconstrói as imagens dos containers |
+| `npm run docker:logs` | Monitora logs em tempo real dos containers |
 
 ---
 
-## Variáveis de Ambiente
+## 🔐 Autenticação, RBAC & REST API v1
 
-Copie `.env.example` para `.env` caso queira customizar opções do servidor:
+O RollDeck possui autenticação local via hash Scrypt, sessões por token Bearer e controle de acesso baseado em papéis:
+- **`admin`**: Acesso irrestrito a configurações, gerenciamento de usuários e chaves externas.
+- **`gm`**: Controle completo de notas, VTT, fichas, Forja, Oráculo e Estúdio.
+- **`player`**: Acesso restrito às suas próprias fichas e ao rolador de dados.
+- **`viewer`**: Acesso somente-leitura.
 
-| Variável | Obrigatória | Descrição |
-| :--- | :---: | :--- |
-| `APP_URL` | Não | URL pública da instância (usada na especificação OpenAPI) |
-| `ACCESS_TOKEN` | Não | Token inicial opcional (se vazio, o administrador define usuário/senha no primeiro acesso) |
-| `CORS_ORIGINS` | Não | Lista separada por vírgula de origens externas autorizadas |
-| `NOTION_API_KEY` | Não | Token de integração interna do Notion (usado apenas no servidor para importar páginas/databases) |
-
----
-
-## Autenticação, RBAC & API REST v1
-
-O RollDeck inclui controle de acesso por papéis (`admin`, `gm`, `player`, `viewer`), login simples por usuário/senha (sem e-mail) e geração de **Chaves de API externas (`rdk_...`)** com escopos granulares (`read`, `write`, `roll`, `generate`) em **Ajustes → API & Integrações**.
-
+### Documentação da API
 - **Especificação OpenAPI 3.1:** `GET /api/openapi.json`
-- **Status do servidor:** `GET /api/health`
-- **Índice da API:** `GET /api/v1`
-
-### Principais Endpoints
-- **Autenticação & Administração:** `/api/auth/login`, `/api/auth/me`, `/api/v1/users`, `/api/v1/keys`
-- **CRUD de Recursos:** `/api/v1/notes`, `/api/v1/links`, `/api/v1/layers`, `/api/v1/frames`, `/api/v1/drawings`, `/api/v1/dice`, `/api/v1/packages`, `/api/v1/categories`, `/api/v1/history`, `/api/v1/loot-generators`, `/api/v1/loot-groups`
-- **Motores RPG:** `POST /api/v1/roll`, `POST /api/v1/oracle`, `POST /api/v1/forja/world`, `POST /api/v1/forja/dungeon`, `POST /api/v1/forja/settlement`, `POST /api/v1/forja/npcs`, `POST /api/v1/forja/items`
-- **Integrações & Sincronização:** `POST /api/v1/integrations/obsidian/import`, `GET /api/v1/integrations/notion/status`, `GET /api/v1/integrations/notion/search`, `POST /api/v1/integrations/notion/import`, `GET/PUT /api/v1/snapshot`
+- **Healthcheck:** `GET /api/health`
+- **Chaves de API:** Podem ser geradas em **Ajustes → API & Integrações** com prefixo `rdk_...` e passadas via cabeçalho `X-API-Key: rdk_...`.
 
 ---
 
-## Estrutura do Projeto
+## 🧪 Qualidade de Código & Testes
 
-```text
-├── server.ts                 # Entrada Express (porta 3000) + middleware Vite
-├── server/                   # Rotas REST v1, Auth/RBAC, OpenAPI, Schemas Zod e Integrações
-├── src/
-│   ├── components/           # Componentes de Dados, Mapa, Fichas, Forja, Loot, Oráculo e Ajustes
-│   ├── screens/              # Telas principais da aplicação
-│   ├── store/                # Stores Zustand (App, Mapa, Loot, Oráculo)
-│   ├── db/                   # Persistência IndexedDB, migrações, backup JSON e exportação ZIP
-│   ├── lib/                  # Motores de rolagem, wiki-links, desenhos SVG, fichas e Forja
-│   ├── data/                 # Tabelas JSON do Oráculo e regras de turno
-│   └── types/                # Definições TypeScript compartilhadas
-└── public/                   # Ícones e assets PWA
-```
+O projeto conta com testes unitários e de integração abrangentes:
+- **17 arquivos de teste e 106 testes automatizados** passando com 100% de sucesso.
+- **Zero erros no linting** (`tsc --noEmit`).
+- **Isolamento de dependências:** O bundle `.fmg-bundle` é excluído dos testes do RollDeck, evitando conflitos de módulos.
+
+---
+
+## 📄 Licença
+Distribuído sob a licença **GNU General Public License v3.0 (GPL-3.0)**. Veja [`LICENSE`](file:///e:/Code/RollDeck-v5/LICENSE) para o texto completo.
+
+> **Créditos e Componentes Integrados:**
+> - **Azgaar's Fantasy Map Generator** & **Armoria** (Max Haniyeu / Azgaar — MIT)
+> - **AzgaarFMG-to-ObsidianMD** (znewton — GPL-3.0)
+> - **SilverBullet** (Zef Hemel — MIT)
+> - **Medieval Fantasy City Generator / TownGeneratorOS** (Watabou)

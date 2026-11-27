@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type {
   AppSettings,
+  CanvasMapImage,
   Category,
   DieDefinition,
   LootGenerator,
@@ -16,6 +17,7 @@ import type {
   PlayerSheet,
   RollResult,
 } from '../src/types';
+import type { VttScene } from '../src/types/vtt';
 import { DEFAULT_CUSTOM_DICE } from '../src/lib/roll';
 import { DEFAULT_LOOT_GENERATOR_TEMPLATES } from '../src/lib/lootTemplates';
 
@@ -84,12 +86,36 @@ export interface AuthStateRecord {
   claimedAt?: number;
 }
 
+export interface StoredHeraldryItem {
+  id: string;
+  nome: string;
+  categoria: string;
+  svgData: string;
+  targetId?: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StoredWorldMapItem {
+  id: string;
+  nome: string;
+  imageDataUrl: string;
+  tipo: string;
+  descricao?: string;
+  createdAt: number;
+}
+
 export interface ApiCollections {
   notes: NoteNode[];
   links: NoteLink[];
   layers: NoteLayer[];
   frames: MapFrame[];
   drawings: MapDrawing[];
+  mapImages: CanvasMapImage[];
+  vttScenes: VttScene[];
+  heraldry: StoredHeraldryItem[];
+  worldMaps: StoredWorldMapItem[];
   dice: DieDefinition[];
   packages: Package[];
   categories: Category[];
@@ -116,6 +142,10 @@ export type CollectionName =
   | 'layers'
   | 'frames'
   | 'drawings'
+  | 'mapImages'
+  | 'vttScenes'
+  | 'heraldry'
+  | 'worldMaps'
   | 'dice'
   | 'packages'
   | 'categories'
@@ -201,6 +231,10 @@ export function createDefaultStoreDocument(): ApiStoreDocument {
       layers: structuredClone(DEFAULT_API_LAYERS),
       frames: [],
       drawings: [],
+      mapImages: [],
+      vttScenes: [],
+      heraldry: [],
+      worldMaps: [],
       dice: structuredClone(DEFAULT_CUSTOM_DICE),
       packages: structuredClone(DEFAULT_API_PACKAGES),
       categories: structuredClone(DEFAULT_API_CATEGORIES),
@@ -214,7 +248,17 @@ export function createDefaultStoreDocument(): ApiStoreDocument {
   };
 }
 
-export class LocalApiStore {
+export interface ApiStore {
+  readonly storageKind: 'file' | 'postgres';
+  init(): Promise<ApiStoreDocument>;
+  getState(): Promise<ApiStoreDocument>;
+  mutate<T>(mutator: (doc: ApiStoreDocument) => T): Promise<T>;
+  toPublicKey(key: StoredApiKey): PublicApiKey;
+  toPublicUser(user: StoredUser): PublicUser;
+}
+
+export class LocalApiStore implements ApiStore {
+  readonly storageKind = 'file' as const;
   private readonly filePath: string;
   private cache: ApiStoreDocument | null = null;
   private writeChain: Promise<void> = Promise.resolve();

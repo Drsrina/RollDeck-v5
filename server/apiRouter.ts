@@ -63,7 +63,7 @@ import {
   UpdateUserSchema,
   ViewStatePatchSchema,
 } from './schemas';
-import type { CollectionName, LocalApiStore, StoredUser } from './store';
+import type { ApiStore, CollectionName, StoredUser } from './store';
 
 function sendValidationError(res: Response, error: z.ZodError) {
   return res.status(400).json({
@@ -183,7 +183,7 @@ function getRequestBaseUrl(req: Request): string {
   return `${proto}://${host}`;
 }
 
-export function createApiV1Router(store: LocalApiStore) {
+export function createApiV1Router(store: ApiStore) {
   const router = express.Router();
   const { requireAuthenticatedUser, requireAdmin, requireApiAuth } = createAuthMiddleware(store);
 
@@ -481,6 +481,22 @@ export function createApiV1Router(store: LocalApiStore) {
           drawings: [],
           lootGenerators: [],
           lootGroups: [],
+          vttScenes: (state.collections.vttScenes || []).map((scene) => {
+            const visibleTokens = (scene.tokens || []).filter((t) => !t.hidden);
+            const visibleIds = new Set(visibleTokens.map((t) => t.id));
+            return {
+              ...scene,
+              tokens: visibleTokens,
+              combat: {
+                ...scene.combat,
+                order: (scene.combat?.order || []).filter((id) => visibleIds.has(id)),
+                activeTokenId:
+                  scene.combat?.activeTokenId && visibleIds.has(scene.combat.activeTokenId)
+                    ? scene.combat.activeTokenId
+                    : null,
+              },
+            };
+          }),
           playerSheets:
             req.auth?.role === 'player' && req.auth.userId
               ? state.collections.playerSheets.filter((s) => s.ownerUserId === req.auth?.userId)
@@ -520,6 +536,10 @@ export function createApiV1Router(store: LocalApiStore) {
       cols.layers = mergeById(cols.layers, data.layers);
       cols.frames = mergeById(cols.frames, data.frames);
       cols.drawings = mergeById(cols.drawings, data.drawings);
+      cols.mapImages = mergeById(cols.mapImages, data.mapImages);
+      cols.vttScenes = mergeById(cols.vttScenes, data.vttScenes);
+      cols.heraldry = mergeById(cols.heraldry, data.heraldry);
+      cols.worldMaps = mergeById(cols.worldMaps, data.worldMaps);
       cols.dice = mergeById(cols.dice, data.dice);
       cols.packages = mergeById(cols.packages, data.packages);
       cols.categories = mergeById(cols.categories, data.categories);
@@ -540,6 +560,10 @@ export function createApiV1Router(store: LocalApiStore) {
         layers: cols.layers.length,
         frames: cols.frames.length,
         drawings: cols.drawings.length,
+        mapImages: cols.mapImages.length,
+        vttScenes: cols.vttScenes.length,
+        heraldry: cols.heraldry.length,
+        worldMaps: cols.worldMaps.length,
         dice: cols.dice.length,
         packages: cols.packages.length,
         categories: cols.categories.length,

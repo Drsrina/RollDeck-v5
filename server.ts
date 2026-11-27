@@ -18,17 +18,26 @@ import {
   verifyUserSession,
 } from './server/auth';
 import { AdminSetupSchema, ChangePasswordSchema, LoginSchema } from './server/schemas';
-import { LocalApiStore, ROLE_SCOPES } from './server/store';
+import { PostgresApiStore } from './server/postgresStore';
+import { LocalApiStore, ROLE_SCOPES, type ApiStore } from './server/store';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export function createServerApp(customStore?: LocalApiStore) {
+export function createDefaultStore(): ApiStore {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (databaseUrl) {
+    return new PostgresApiStore(databaseUrl);
+  }
+  return new LocalApiStore();
+}
+
+export function createServerApp(customStore?: ApiStore) {
   const app = express();
-  const store = customStore || new LocalApiStore();
+  const store = customStore || createDefaultStore();
 
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
 
   // Explicit allowlisted CORS (never wildcard '*' on authenticated APIs)
   const allowedOrigins = (process.env.CORS_ORIGINS || '')
@@ -60,6 +69,7 @@ export function createServerApp(customStore?: LocalApiStore) {
     res.json({
       status: 'ok',
       mode: 'local-api-v1',
+      storage: store.storageKind,
       apiVersion: '1.0.0',
       authConfigured: authMode !== 'unclaimed',
       userCount: state.users.length,
@@ -254,6 +264,13 @@ export function createServerApp(customStore?: LocalApiStore) {
   // Mount complete REST API v1
   app.use('/api/v1', createApiV1Router(store));
 
+  // Servir bundle estático de apps internos do estúdio (.fmg-bundle)
+  const watabouStaticPath = path.resolve(
+    __dirname,
+    '.fmg-bundle/.1implementacoes/TownGeneratorOS/Export/html5/bin'
+  );
+  app.use('/apps/city-generator', express.static(watabouStaticPath));
+
   return { app, store };
 }
 
@@ -280,6 +297,12 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.resolve(__dirname, 'dist')));
+    app.use('/apps', (_req, res) => {
+      res.status(404).send('App asset not found');
+    });
+    app.use('/api', (_req, res) => {
+      res.status(404).json({ error: 'not_found' });
+    });
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });

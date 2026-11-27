@@ -1,4 +1,4 @@
-import { Castle, Compass, Dices, History, IdCard, Map as MapIcon, PackageCheck, Settings, Sparkles, Swords, LucideIcon } from 'lucide-react';
+import { Castle, Compass, Dices, History, IdCard, Map as MapIcon, PackageCheck, PanelsTopLeft, Settings, Sparkles, Swords, LucideIcon } from 'lucide-react';
 import React from 'react';
 import { canAccessTab, useAuthSession } from '../../lib/authSession';
 import { triggerHaptic } from '../../lib/haptics';
@@ -15,6 +15,7 @@ export const BottomNav: React.FC = () => {
     { id: 'sheets', label: 'Fichas', icon: IdCard },
     { id: 'oraculo', label: 'Oráculo', icon: Castle },
     { id: 'forja', label: 'Forja', icon: Compass },
+    { id: 'studio', label: 'Estúdio', icon: PanelsTopLeft },
     { id: 'map', label: 'Mapa', icon: MapIcon },
     { id: 'vtt', label: 'VTT', icon: Swords },
     { id: 'packages', label: 'Pacotes', icon: PackageCheck },

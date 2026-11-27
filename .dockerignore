@@ -1,0 +1,18 @@
+# .dockerignore
+node_modules
+dist
+.git
+.github
+.vscode
+.gemini
+coverage
+*.log
+npm-debug.log*
+.env.local
+.env.*.local
+.fmg-bundle/.git
+.fmg-bundle/**/node_modules
+.fmg-bundle/**/dist
+.fmg-bundle/dados_mapas
+.fmg-bundle/meu_obsidian_vault
+.fmg-bundle/silverbullet_data
